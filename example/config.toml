@@ -3,8 +3,8 @@ crypto_port = 60005
 storage_port = 60003
 domain = "test-chain-node1"
 enable_metrics = false
-l1_capacity = 20
-l2_capacity = 1000
+l1_capacity = 10
+l2_capacity = 20
 
 [storage_opendal.log_config]
 max_level = "info"
