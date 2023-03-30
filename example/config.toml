@@ -1,0 +1,20 @@
+[storage_opendal]
+crypto_port = 60005
+storage_port = 60003
+domain = "test-chain-node1"
+enable_metrics = false
+l1_capacity = 20
+l2_capacity = 1000
+
+[storage_opendal.log_config]
+max_level = "info"
+filter = "info"
+# rolling_file_path = "./logs"
+service_name = "storage"
+# agent_endpoint = "127.0.0.1:6831"
+
+# [storage_opendal.cloud_storage]
+# access_key_id = "HRBuyMi0uH6POuDD"
+# secret_access_key = "d65Vo1UuKmsWMssdv0Ky85JYue5kpenX"
+# endpoint = "http://192.168.10.122:30289"
+# bucket = "opendal"
