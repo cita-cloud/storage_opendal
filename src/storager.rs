@@ -382,11 +382,6 @@ impl Storager {
         .await?;
 
         self.store(
-            &get_real_key(i32::from(Regions::Global) as u32, &1u64.to_be_bytes()),
-            block_hash.clone(),
-        )
-        .await?;
-        self.store(
             &get_real_key(i32::from(Regions::Global) as u32, &0u64.to_be_bytes()),
             height_bytes.clone(),
         )

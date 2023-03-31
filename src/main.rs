@@ -168,6 +168,33 @@ impl StorageService for StorageServer {
                     }))
                 }
             }
+        } else if key == 1u64.to_be_bytes().to_vec() && region == 0 {
+            let height_real_key = get_real_key(region, &0u64.to_be_bytes());
+            match self.storager.load(&height_real_key, true).await {
+                Ok(height) => {
+                    let hash_real_key = get_real_key(4, &height);
+                    match self.storager.load(&hash_real_key, true).await {
+                        Ok(value) => Ok(Response::new(Value {
+                            status: Some(StatusCodeEnum::Success.into()),
+                            value,
+                        })),
+                        Err(status) => {
+                            warn!("load failed: {}", status.to_string());
+                            Ok(Response::new(Value {
+                                status: Some(status.into()),
+                                value: vec![],
+                            }))
+                        }
+                    }
+                }
+                Err(status) => {
+                    warn!("load failed: {}", status.to_string());
+                    Ok(Response::new(Value {
+                        status: Some(status.into()),
+                        value: vec![],
+                    }))
+                }
+            }
         } else {
             match self.storager.load(&real_key, true).await {
                 Ok(value) => Ok(Response::new(Value {
