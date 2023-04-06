@@ -31,7 +31,6 @@ use opendal::{
 };
 use prost::Message;
 use std::time::Duration;
-use tokio::time::interval;
 
 #[derive(Clone)]
 pub struct Storager {
@@ -472,74 +471,72 @@ async fn backup(local: Storager, backup_interval_secs: u64) {
     let height_real_key = get_real_key(0, &0u64.to_be_bytes());
     let delete_real_key = get_real_key(0, &2u64.to_be_bytes());
 
-    let mut backup_interval = interval(Duration::from_secs(backup_interval_secs));
-    tokio::time::sleep(Duration::from_secs(backup_interval_secs)).await;
+    let backup_interval = Duration::from_secs(backup_interval_secs);
     'backup_round: loop {
-        tokio::select! {
-            _ = backup_interval.tick() => {
-                // backup
-                let local_height = match local.load(&height_real_key, false).await {
-                    Ok(value) => u64_decode(&value),
-                    Err(e) => {
-                        warn!(
-                            "backup failed: load local height failed: {}. layer: {}, scheme: {}. skip this round",
-                            e.to_string(),
-                            local.layer,
-                            local.scheme
-                        );
-                        continue;
-                    }
-                };
-                let remote_height = match remote.load(&height_real_key, false).await {
-                    Ok(value) => u64_decode(&value),
-                    Err(e) => {
-                        if e == StatusCodeEnum::NotFound {
-                            0
-                        } else {
-                            warn!(
-                                "backup failed: load remote height failed: {}. layer: {}, scheme: {}. skip this round",
-                                e.to_string(),
-                                remote.layer,
-                                remote.scheme
-                            );
-                            continue;
-                        }
-                    }
-                };
-                if local_height < remote_height {
-                    panic!("local_height < remote_height")
-                }
-
-                // for storing genesis block
-                let buckup_start = if remote_height == 0 {
+        tokio::time::sleep(backup_interval).await;
+        // backup
+        let local_height = match local.load(&height_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                warn!(
+                    "backup failed: load local height failed: {}. layer: {}, scheme: {}. skip this round",
+                    e.to_string(),
+                    local.layer,
+                    local.scheme
+                );
+                continue;
+            }
+        };
+        let remote_height = match remote.load(&height_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                if e == StatusCodeEnum::NotFound {
                     0
                 } else {
-                    remote_height + 1
-                };
-                info!(
-                    "backup {} - {}: layer{}: {} to layer{}: {}",
-                    buckup_start,
-                    local_height,
-                    local.layer,
-                    local.scheme,
-                    remote.layer,
-                    remote.scheme
-                );
-                for height in buckup_start..=local_height {
-                    let real_keys = match local.collect_keys(height, false).await {
-                        Ok(keys) => keys,
-                        Err(e) => {
-                            warn!(
-                                "backup({}) failed: collect keys failed: {}. layer: {}, scheme: {}. skip this round",
-                                height,
-                                e.to_string(),
-                                local.layer,
-                                local.scheme
-                            );
-                            continue 'backup_round;
-                        }
-                    };
-                    for real_key in real_keys {
+                    warn!(
+                        "backup failed: load remote height failed: {}. layer: {}, scheme: {}. skip this round",
+                        e.to_string(),
+                        remote.layer,
+                        remote.scheme
+                    );
+                    continue;
+                }
+            }
+        };
+        if local_height < remote_height {
+            panic!("local_height < remote_height")
+        }
+
+        // for storing genesis block
+        let buckup_start = if remote_height == 0 {
+            0
+        } else {
+            remote_height + 1
+        };
+        info!(
+            "backup {} - {}: layer{}: {} to layer{}: {}",
+            buckup_start, local_height, local.layer, local.scheme, remote.layer, remote.scheme
+        );
+        for height in buckup_start..=local_height {
+            let real_keys = match local.collect_keys(height, false).await {
+                Ok(keys) => keys,
+                Err(e) => {
+                    warn!(
+                        "backup({}) failed: collect keys failed: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        e.to_string(),
+                        local.layer,
+                        local.scheme
+                    );
+                    continue 'backup_round;
+                }
+            };
+            let mut handles = vec![];
+            for real_key in real_keys {
+                let local = local.clone();
+                let remote = remote.clone();
+                let handle = tokio::spawn({
+                    async move {
                         let value = match local.load(&real_key, false).await {
                             Ok(value) => value,
                             Err(e) => {
@@ -553,92 +550,100 @@ async fn backup(local: Storager, backup_interval_secs: u64) {
                                     local.layer,
                                     local.scheme
                                 );
-                                continue 'backup_round;
+                                return false;
                             }
                         };
                         if let Err(e) = remote.store(&real_key, value).await {
                             let (region, key) = get_raw_key(&real_key);
                             warn!(
-                                "backup({}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
-                                height,
-                                e.to_string(),
-                                region,
-                                key,
-                                remote.layer,
-                                remote.scheme
-                            );
-                            continue 'backup_round;
-                        }
-                    }
-                    // update backup height
-                    if let Err(e) = remote
-                        .store(&height_real_key, height.to_be_bytes().to_vec())
-                        .await
-                    {
-                        warn!(
-                            "backup({}) failed: update backup height failed: {}. layer: {}, scheme: {}. skip this round",
-                            height,
-                            e.to_string(),
-                            remote.layer,
-                            remote.scheme
-                        );
-                        continue 'backup_round;
-                    }
-                    info!(
-                        "backup({}) succeed: layer: {}, scheme: {}",
-                        height, remote.layer, remote.scheme
-                    );
-                }
-
-                // delete outdate
-                let delete_height = match local.load(&delete_real_key, false).await {
-                    Ok(value) => u64_decode(&value),
-                    Err(e) => {
-                        if e == StatusCodeEnum::NotFound {
-                            0
+                                    "backup({}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
+                                    height,
+                                    e.to_string(),
+                                    region,
+                                    key,
+                                    remote.layer,
+                                    remote.scheme
+                                );
+                            false
                         } else {
-                            warn!(
-                                "backup failed: load delete height failed: {}. layer: {}, scheme: {}. skip this round",
-                                e.to_string(),
-                                local.layer,
-                                local.scheme
-                            );
-                            continue;
+                            true
                         }
                     }
-                };
-                if local_height - delete_height > capacity {
-                    info!(
-                        "delete outdate {} - {}: layer: {}, scheme: {}",
-                        delete_height + 1,
-                        local_height - capacity,
+                });
+                handles.push(handle);
+            }
+            // update backup height
+            for handle in handles {
+                if !handle.await.unwrap() {
+                    continue 'backup_round;
+                }
+            }
+            if let Err(e) = remote
+                .store(&height_real_key, height.to_be_bytes().to_vec())
+                .await
+            {
+                warn!(
+                    "backup({}) failed: update backup height failed: {}. layer: {}, scheme: {}. skip this round",
+                    height,
+                    e.to_string(),
+                    remote.layer,
+                    remote.scheme
+                );
+                continue 'backup_round;
+            }
+            info!(
+                "backup({}) succeed: layer: {}, scheme: {}",
+                height, remote.layer, remote.scheme
+            );
+        }
+
+        // delete outdate
+        let delete_height = match local.load(&delete_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                if e == StatusCodeEnum::NotFound {
+                    0
+                } else {
+                    warn!(
+                        "backup failed: load delete height failed: {}. layer: {}, scheme: {}. skip this round",
+                        e.to_string(),
                         local.layer,
                         local.scheme
                     );
-                    for height in delete_height + 1..=local_height - capacity {
-                        if let Err(e) = local.delete_outdate(height).await {
-                            warn!(
-                                "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
-                                height,
-                                e.to_string(),
-                                local.layer,
-                                local.scheme
-                            );
-                            continue 'backup_round;
-                        } else if let Err(e) = local
-                            .store(&delete_real_key, height.to_be_bytes().to_vec())
-                            .await
-                        {
-                            warn!(
-                                "delete outdate({}) failed: update delete height failed: {}. layer: {}, scheme: {}. skip this round",
-                                height,
-                                e.to_string(),
-                                local.layer,
-                                local.scheme
-                            );
-                            continue 'backup_round;
-                        }
-                    }
+                    continue;
+                }
+            }
+        };
+        if local_height - delete_height > capacity {
+            info!(
+                "delete outdate {} - {}: layer: {}, scheme: {}",
+                delete_height + 1,
+                local_height - capacity,
+                local.layer,
+                local.scheme
+            );
+            for height in delete_height + 1..=local_height - capacity {
+                if let Err(e) = local.delete_outdate(height).await {
+                    warn!(
+                        "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        e.to_string(),
+                        local.layer,
+                        local.scheme
+                    );
+                    continue 'backup_round;
+                } else if let Err(e) = local
+                    .store(&delete_real_key, height.to_be_bytes().to_vec())
+                    .await
+                {
+                    warn!(
+                        "delete outdate({}) failed: update delete height failed: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        e.to_string(),
+                        local.layer,
+                        local.scheme
+                    );
+                    continue 'backup_round;
                 }
             }
         }
