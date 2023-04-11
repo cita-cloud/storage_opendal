@@ -14,7 +14,6 @@
 
 mod config;
 mod health_check;
-mod panic_hook;
 mod storager;
 mod util;
 
@@ -23,7 +22,6 @@ extern crate tracing;
 
 use crate::config::StorageConfig;
 use crate::health_check::HealthCheckServer;
-use crate::panic_hook::set_panic_handler;
 use crate::util::clap_about;
 use crate::util::get_real_key;
 use crate::util::init_grpc_client;
@@ -38,6 +36,7 @@ use cita_cloud_proto::storage::{
 };
 use clap::Parser;
 use cloud_util::metrics::{run_metrics_exporter, MiddlewareLayer};
+use cloud_util::panic_hook::set_panic_handler;
 use std::net::AddrParseError;
 use std::path::Path;
 use std::sync::Arc;
