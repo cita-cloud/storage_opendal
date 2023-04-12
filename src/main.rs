@@ -301,7 +301,7 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
             .serve(addr)
             .await
             .map_err(|e| {
-                warn!("start storage_opendal grpc server failed: {}", e);
+                warn!("start storage_opendal grpc server failed: {:?}", e);
                 StatusCodeEnum::FatalError
             })?;
     }
