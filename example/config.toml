@@ -1,5 +1,4 @@
 [storage_opendal]
-crypto_port = 60005
 storage_port = 60003
 domain = "test-chain-node1"
 enable_metrics = false
