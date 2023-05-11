@@ -17,7 +17,7 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "=0.30.2", features = ["services-rocksdb"] }
+opendal = { version = "0.34", features = ["services-rocksdb"] }
 
 cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
 cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
