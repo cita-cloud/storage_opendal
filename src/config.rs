@@ -64,6 +64,7 @@ pub struct StorageConfig {
     pub l2_capacity: u64,
     // invalid if cloud_storage is empty
     pub backup_interval: u64,
+    pub retreat_interval: u64,
     pub cloud_storage: CloudStorage,
 }
 
@@ -82,7 +83,8 @@ impl Default for StorageConfig {
             domain: Default::default(),
             l1_capacity: 20,
             l2_capacity: 1000,
-            backup_interval: 10,
+            backup_interval: 300,
+            retreat_interval: 5,
             cloud_storage: Default::default(),
         }
     }
