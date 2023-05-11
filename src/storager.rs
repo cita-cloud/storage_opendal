@@ -29,7 +29,9 @@ use opendal::{
     Builder, ErrorKind, Operator,
 };
 use prost::Message;
+use rand::Rng;
 use std::time::Duration;
+use tokio::task;
 
 #[derive(Clone)]
 pub struct Storager {
@@ -60,12 +62,13 @@ impl Storager {
         }
     }
 
-    pub fn build_default(
+    pub fn build(
         data_root: &str,
         s3config: &CloudStorage,
         l1_capacity: u64,
         l2_capacity: u64,
         backup_interval: u64,
+        retreat_interval: u64,
     ) -> Self {
         // if s3config is empty, storager3 is None
         let storager3 = if s3config.is_empty() {
@@ -94,7 +97,9 @@ impl Storager {
                 2,
             );
             let storager2_for_backup = storager2.clone();
-            tokio::spawn(async move { backup(storager2_for_backup, backup_interval).await });
+            tokio::spawn(async move {
+                backup(storager2_for_backup, backup_interval, retreat_interval).await
+            });
             storager2
         } else {
             Storager::build_one(rocksdb_builder, None, None, 2)
@@ -464,29 +469,27 @@ impl Storager {
     }
 }
 
-async fn backup(local: Storager, backup_interval_secs: u64) {
+async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_secs: u64) {
     let capacity = local.capacity.unwrap();
     let remote = local.next_storager.as_ref().unwrap();
-    let height_real_key = get_real_key(0, &0u64.to_be_bytes());
+    let local_height_real_key = get_real_key(0, &0u64.to_be_bytes());
+    let remote_height_real_key = get_real_key(0, &1u64.to_be_bytes());
     let delete_real_key = get_real_key(0, &2u64.to_be_bytes());
 
-    let backup_interval = Duration::from_secs(backup_interval_secs);
+    let min_interval = backup_interval_secs * 2 / 3;
+    let max_interval = backup_interval_secs * 4 / 3;
     'backup_round: loop {
-        tokio::time::sleep(backup_interval).await;
-        // backup
-        let local_height = match local.load(&height_real_key, false).await {
-            Ok(value) => u64_decode(&value),
-            Err(e) => {
-                warn!(
-                    "backup failed: load local height failed: {}. layer: {}, scheme: {}. skip this round",
-                    e.to_string(),
-                    local.layer,
-                    local.scheme
-                );
-                continue;
-            }
-        };
-        let remote_height = match remote.load(&height_real_key, false).await {
+        // sleep
+        let backup_interval = task::spawn_blocking(move || {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(min_interval..=max_interval)
+        })
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(backup_interval)).await;
+
+        // avoid concurrent backup
+        let mut remote_height = match remote.load(&remote_height_real_key, false).await {
             Ok(value) => u64_decode(&value),
             Err(e) => {
                 if e == StatusCodeEnum::NotFound {
@@ -502,10 +505,49 @@ async fn backup(local: Storager, backup_interval_secs: u64) {
                 }
             }
         };
-        if local_height < remote_height {
-            panic!("local_height < remote_height")
+        loop {
+            tokio::time::sleep(Duration::from_secs(retreat_interval_secs)).await;
+            let new_remote_height = match remote.load(&remote_height_real_key, false).await {
+                Ok(value) => u64_decode(&value),
+                Err(e) => {
+                    if e == StatusCodeEnum::NotFound {
+                        0
+                    } else {
+                        warn!(
+                            "backup failed: load remote height failed: {}. layer: {}, scheme: {}. skip this round",
+                            e.to_string(),
+                            remote.layer,
+                            remote.scheme
+                        );
+                        continue 'backup_round;
+                    }
+                }
+            };
+            if remote_height == new_remote_height {
+                break;
+            } else {
+                remote_height = new_remote_height;
+                warn!("backup retreat");
+            }
         }
 
+        // backup
+        let local_height = match local.load(&local_height_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                warn!(
+                    "backup failed: load local height failed: {}. layer: {}, scheme: {}. skip this round",
+                    e.to_string(),
+                    local.layer,
+                    local.scheme
+                );
+                continue;
+            }
+        };
+        if remote_height >= local_height {
+            info!("remote is up to date. skip this round");
+            continue;
+        }
         // for storing genesis block
         let buckup_start = if remote_height == 0 {
             0
@@ -578,7 +620,7 @@ async fn backup(local: Storager, backup_interval_secs: u64) {
                 }
             }
             if let Err(e) = remote
-                .store(&height_real_key, height.to_be_bytes().to_vec())
+                .store(&remote_height_real_key, height.to_be_bytes().to_vec())
                 .await
             {
                 warn!(
@@ -709,7 +751,7 @@ mod tests {
         fn prop(args: DBTestArgs) -> bool {
             let dir = tempdir().unwrap();
             let path = dir.path().to_str().unwrap();
-            let storager = Storager::build_default(path, &CloudStorage::default(), 10, 20, 10);
+            let storager = Storager::build(path, &CloudStorage::default(), 10, 20, 10, 3);
 
             let region = args.region;
             let key = args.key.clone();

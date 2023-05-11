@@ -255,12 +255,13 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
         StatusCodeEnum::FatalError
     })?;
     // init storager
-    let storager = Arc::new(Storager::build_default(
+    let storager = Arc::new(Storager::build(
         &config.data_root,
         &config.cloud_storage,
         config.l1_capacity,
         config.l2_capacity,
         config.backup_interval,
+        config.retreat_interval,
     ));
     let storage_server = StorageServer::new(storager.clone());
 
