@@ -12,41 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::StorageConfig;
-use cita_cloud_proto::client::{ClientOptions, InterceptedSvc};
-use cita_cloud_proto::crypto::crypto_service_client::CryptoServiceClient;
-use cita_cloud_proto::retry::RetryClient;
 use cita_cloud_proto::{
     blockchain::{raw_transaction::Tx, Block, CompactBlock, CompactBlockBody},
     storage::Regions,
 };
-use tokio::sync::OnceCell;
-
-pub static CRYPTO_CLIENT: OnceCell<RetryClient<CryptoServiceClient<InterceptedSvc>>> =
-    OnceCell::const_new();
-
-const CLIENT_NAME: &str = "storage";
-
-// This must be called before access to clients.
-#[allow(dead_code)]
-pub fn init_grpc_client(config: &StorageConfig) {
-    CRYPTO_CLIENT
-        .set({
-            let client_options = ClientOptions::new(
-                CLIENT_NAME.to_string(),
-                format!("http://127.0.0.1:{}", config.crypto_port),
-            );
-            match client_options.connect_crypto() {
-                Ok(retry_client) => retry_client,
-                Err(e) => panic!("client init error: {:?}", &e),
-            }
-        })
-        .unwrap();
-}
-
-pub fn crypto_client() -> RetryClient<CryptoServiceClient<InterceptedSvc>> {
-    CRYPTO_CLIENT.get().cloned().unwrap()
-}
 
 pub fn check_region(region: u32) -> bool {
     region < Regions::Button as u8 as u32
