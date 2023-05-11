@@ -14,7 +14,7 @@
 
 use crate::{
     config::CloudStorage,
-    util::{crypto_client, full_to_compact, get_raw_key, get_real_key, u64_decode},
+    util::{full_to_compact, get_raw_key, get_real_key, u64_decode},
 };
 use async_recursion::async_recursion;
 use cita_cloud_proto::{
@@ -23,7 +23,6 @@ use cita_cloud_proto::{
     storage::Regions,
 };
 use cloud_util::common::get_tx_hash;
-use cloud_util::crypto::get_block_hash;
 use opendal::{
     layers::RetryLayer,
     services::{Memory, Rocksdb, S3},
@@ -295,12 +294,12 @@ impl Storager {
         let height = u64_decode(&height_bytes);
         info!("store block({}): start", height);
 
-        let block = Block::decode(block_bytes.as_slice()).map_err(|_| {
+        let block_hash = block_bytes[..32].to_vec();
+
+        let block = Block::decode(&block_bytes[32..]).map_err(|_| {
             warn!("store block({}) failed: decode Block failed", height);
             StatusCodeEnum::DecodeError
         })?;
-
-        let block_hash = get_block_hash(crypto_client(), block.header.as_ref()).await?;
 
         for (tx_index, raw_tx) in block
             .body
