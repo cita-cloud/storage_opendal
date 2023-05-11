@@ -472,7 +472,8 @@ impl Storager {
 async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_secs: u64) {
     let capacity = local.capacity.unwrap();
     let remote = local.next_storager.as_ref().unwrap();
-    let height_real_key = get_real_key(0, &0u64.to_be_bytes());
+    let local_height_real_key = get_real_key(0, &0u64.to_be_bytes());
+    let remote_height_real_key = get_real_key(0, &1u64.to_be_bytes());
     let delete_real_key = get_real_key(0, &2u64.to_be_bytes());
 
     let min_interval = backup_interval_secs * 2 / 3;
@@ -488,7 +489,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         tokio::time::sleep(Duration::from_secs(backup_interval)).await;
 
         // avoid concurrent backup
-        let mut remote_height = match remote.load(&height_real_key, false).await {
+        let mut remote_height = match remote.load(&remote_height_real_key, false).await {
             Ok(value) => u64_decode(&value),
             Err(e) => {
                 if e == StatusCodeEnum::NotFound {
@@ -506,7 +507,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         };
         loop {
             tokio::time::sleep(Duration::from_secs(retreat_interval_secs)).await;
-            let new_remote_height = match remote.load(&height_real_key, false).await {
+            let new_remote_height = match remote.load(&remote_height_real_key, false).await {
                 Ok(value) => u64_decode(&value),
                 Err(e) => {
                     if e == StatusCodeEnum::NotFound {
@@ -531,7 +532,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         }
 
         // backup
-        let local_height = match local.load(&height_real_key, false).await {
+        let local_height = match local.load(&local_height_real_key, false).await {
             Ok(value) => u64_decode(&value),
             Err(e) => {
                 warn!(
@@ -619,7 +620,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                 }
             }
             if let Err(e) = remote
-                .store(&height_real_key, height.to_be_bytes().to_vec())
+                .store(&remote_height_real_key, height.to_be_bytes().to_vec())
                 .await
             {
                 warn!(
