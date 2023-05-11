@@ -46,7 +46,6 @@ Options:
     参见示例`example/config.toml`。
 
     其中`[storage_opendal]`段为微服务的配置：
-    * `crypto_port` 为依赖的`Crypto`微服务的`gRPC`服务监听的端口号
     * `storage_port` 为本微服务的`gRPC`服务监听的端口号
     * `domain` 节点的域名
     * `enable_metrics` 为`metrics`功能开关

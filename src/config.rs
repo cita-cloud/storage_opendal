@@ -49,7 +49,6 @@ impl CloudStorage {
 #[serde(default)]
 pub struct StorageConfig {
     pub storage_port: u16,
-    pub crypto_port: u16,
     pub data_root: String,
     pub enable_metrics: bool,
     pub metrics_port: u16,
@@ -72,7 +71,6 @@ impl Default for StorageConfig {
     fn default() -> Self {
         Self {
             storage_port: 50003,
-            crypto_port: 50005,
             data_root: "chain_data".to_string(),
             enable_metrics: true,
             metrics_port: 60003,
@@ -104,7 +102,6 @@ mod tests {
     fn basic_test() {
         let config = StorageConfig::new("example/config.toml");
 
-        assert_eq!(config.crypto_port, 60005);
         assert_eq!(config.storage_port, 60003);
         assert_eq!(config.domain, "test-chain-node1");
         assert_eq!(config.l1_capacity, 10);
