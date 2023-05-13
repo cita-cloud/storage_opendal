@@ -88,7 +88,7 @@ impl Storager {
         };
 
         let mut rocksdb_builder = Rocksdb::default();
-        rocksdb_builder.datadir((data_root.to_owned() + "/rocksdb").as_str());
+        rocksdb_builder.datadir(data_root);
         let storager2 = if let Some(storager3) = storager3 {
             let storager2 = Storager::build_one(
                 rocksdb_builder,
