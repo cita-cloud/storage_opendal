@@ -35,8 +35,8 @@ use tokio::task;
 
 #[derive(Clone)]
 pub struct Storager {
-    operator: Operator,
-    next_storager: Option<Box<Storager>>,
+    pub operator: Operator,
+    pub next_storager: Option<Box<Storager>>,
     capacity: Option<u64>,
     layer: u8,
     scheme: String,
