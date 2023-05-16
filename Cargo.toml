@@ -18,6 +18,8 @@ tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
 opendal = { version = "0.34", features = ["services-rocksdb"] }
+# opendal disable all default features, so we need to enable them manually
+rocksdb = "0.20"
 
 cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
 cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
