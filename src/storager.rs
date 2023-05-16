@@ -558,7 +558,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             "backup {} - {}: layer{}: {} to layer{}: {}",
             buckup_start, local_height, local.layer, local.scheme, remote.layer, remote.scheme
         );
-        for height in buckup_start..=local_height {
+        for height in buckup_start..local_height {
             let real_keys = match local.collect_keys(height, false).await {
                 Ok(keys) => keys,
                 Err(e) => {
