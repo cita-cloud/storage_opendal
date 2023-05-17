@@ -284,7 +284,9 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
         info!("metrics on");
         Server::builder()
             .layer(layer)
-            .add_service(StorageServiceServer::new(storage_server))
+            .add_service(
+                StorageServiceServer::new(storage_server).max_decoding_message_size(usize::MAX),
+            )
             .add_service(HealthServer::new(HealthCheckServer::new(storager)))
             .serve(addr)
             .await
@@ -295,7 +297,9 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
     } else {
         info!("metrics off");
         Server::builder()
-            .add_service(StorageServiceServer::new(storage_server))
+            .add_service(
+                StorageServiceServer::new(storage_server).max_decoding_message_size(usize::MAX),
+            )
             .add_service(HealthServer::new(HealthCheckServer::new(storager)))
             .serve(addr)
             .await
