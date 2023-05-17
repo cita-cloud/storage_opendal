@@ -544,7 +544,8 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                 continue;
             }
         };
-        if remote_height >= local_height {
+        let remote_target = local_height - 1;
+        if remote_height >= remote_target {
             info!("remote is up to date. skip this round");
             continue;
         }
@@ -556,9 +557,9 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         };
         info!(
             "backup {} - {}: layer{}: {} to layer{}: {}",
-            buckup_start, local_height, local.layer, local.scheme, remote.layer, remote.scheme
+            buckup_start, remote_target, local.layer, local.scheme, remote.layer, remote.scheme
         );
-        for height in buckup_start..local_height {
+        for height in buckup_start..=remote_target {
             let real_keys = match local.collect_keys(height, false).await {
                 Ok(keys) => keys,
                 Err(e) => {
