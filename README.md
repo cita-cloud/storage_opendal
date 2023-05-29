@@ -11,7 +11,7 @@ docker build -t citacloud/storage_opendal .
 
 ```
 $ storage -h
-storage 6.6.4
+storage 6.7.0
 Rivtower Technologies <contact@rivtower.com>
 
 Usage: storage <COMMAND>
