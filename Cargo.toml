@@ -1,46 +1,55 @@
+[[bin]]
+name = 'bench'
+path = 'benches/main.rs'
+
 [package]
-name = "storage"
-version = "6.7.0"
-authors = ["Rivtower Technologies <contact@rivtower.com>"]
-license = "Apache-2.0"
-edition = "2021"
+name = 'storage'
+version = '6.7.0-beta1'
+license = 'Apache-2.0'
+edition = '2021'
+authors = ['Rivtower Technologies <contact@rivtower.com>']
 
 [dependencies]
-clap = { version = "4.2", features = ["derive"] }
-tonic = "0.9"
-prost = "0.11"
-tokio = { version = "1.27", features = ["full"] }
-hex = "0.4"
-serde = "1.0"
-serde_derive = "1.0"
-tower = "0.4"
-tracing = "0.1"
-async-recursion = "1.0"
-rand = "0.8"
-opendal = { version = "0.36", features = ["services-rocksdb"] }
-# opendal disable all default features, so we need to enable them manually
-rocksdb = "0.21"
+tonic = '0.9'
+prost = '0.11'
+hex = '0.4'
+serde = '1.0'
+serde_derive = '1.0'
+tower = '0.4'
+tracing = '0.1'
+async-recursion = '1.0'
+rand = '0.8'
+rocksdb = '0.21'
+cloud-util = '=0.7.0-beta1'
+cita_cloud_proto = '=6.7.0-beta1'
 
-cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
-cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
+[dependencies.clap]
+version = '4.2'
+features = ['derive']
 
-[[bin]]
-name = "bench"
-path = "benches/main.rs"
+[dependencies.tokio]
+version = '1.27'
+features = ['full']
+
+[dependencies.opendal]
+version = '0.36'
+features = ['services-rocksdb']
 
 [dev-dependencies]
-tempfile = "3.3"
-quickcheck = "1.0"
-rand = "0.8"
-minitrace = { git = "https://github.com/tikv/minitrace-rust.git" }
-minitrace-jaeger = { git = "https://github.com/tikv/minitrace-rust.git" }
-minitrace-macro = { git = "https://github.com/tikv/minitrace-rust.git" }
-libsm = "0.5"
+tempfile = '3.3'
+quickcheck = '1.0'
+rand = '0.8'
+libsm = '0.5'
 
-[profile.release.package."*"]
-# Set the default for dependencies.
-debug = 0
+[dev-dependencies.minitrace]
+git = 'https://github.com/tikv/minitrace-rust.git'
 
+[dev-dependencies.minitrace-jaeger]
+git = 'https://github.com/tikv/minitrace-rust.git'
+
+[dev-dependencies.minitrace-macro]
+git = 'https://github.com/tikv/minitrace-rust.git'
 [profile.release]
-# Add debug info -- line tables only
 debug = 1
+[profile.release.package."*"]
+debug = 0
