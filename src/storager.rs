@@ -14,7 +14,7 @@
 
 use crate::{
     config::CloudStorage,
-    util::{full_to_compact, get_raw_key, get_real_key, u64_decode},
+    util::{check_layer3_availability, full_to_compact, get_raw_key, get_real_key, u64_decode},
 };
 use async_recursion::async_recursion;
 use cita_cloud_proto::{
@@ -44,13 +44,16 @@ pub struct Storager {
 
 // build API
 impl Storager {
-    fn build_one(
+    async fn build_one(
         builder: impl Builder,
         next: Option<Box<Storager>>,
         capacity: Option<u64>,
         layer: u8,
     ) -> Self {
         let operator = Operator::new(builder).unwrap().finish();
+        if layer == 3 {
+            check_layer3_availability(&operator).await;
+        }
         let operator = operator.layer(RetryLayer::default());
         let scheme = operator.info().scheme().to_string();
         Self {
@@ -62,7 +65,7 @@ impl Storager {
         }
     }
 
-    pub fn build(
+    pub async fn build(
         data_root: &str,
         l3config: &CloudStorage,
         l1_capacity: u64,
@@ -82,7 +85,7 @@ impl Storager {
                     oss_builder.endpoint(l3config.endpoint.as_str());
                     oss_builder.bucket(l3config.bucket.as_str());
                     oss_builder.root(l3config.root.as_str());
-                    Storager::build_one(oss_builder, None, None, 3)
+                    Storager::build_one(oss_builder, None, None, 3).await
                 }
                 "obs" => {
                     let mut obs_builder = Obs::default();
@@ -91,7 +94,7 @@ impl Storager {
                     obs_builder.endpoint(l3config.endpoint.as_str());
                     obs_builder.bucket(l3config.bucket.as_str());
                     obs_builder.root(l3config.root.as_str());
-                    Storager::build_one(obs_builder, None, None, 3)
+                    Storager::build_one(obs_builder, None, None, 3).await
                 }
                 "cos" => {
                     let mut cos_builder = Cos::default();
@@ -100,7 +103,7 @@ impl Storager {
                     cos_builder.endpoint(l3config.endpoint.as_str());
                     cos_builder.bucket(l3config.bucket.as_str());
                     cos_builder.root(l3config.root.as_str());
-                    Storager::build_one(cos_builder, None, None, 3)
+                    Storager::build_one(cos_builder, None, None, 3).await
                 }
                 "s3" => {
                     let mut s3_builder = S3::default();
@@ -109,7 +112,7 @@ impl Storager {
                     s3_builder.endpoint(l3config.endpoint.as_str());
                     s3_builder.bucket(l3config.bucket.as_str());
                     s3_builder.root(l3config.root.as_str());
-                    Storager::build_one(s3_builder, None, None, 3)
+                    Storager::build_one(s3_builder, None, None, 3).await
                 }
                 "azblob" => {
                     let mut azblob_builder = Azblob::default();
@@ -118,7 +121,7 @@ impl Storager {
                     azblob_builder.endpoint(l3config.endpoint.as_str());
                     azblob_builder.container(l3config.bucket.as_str());
                     azblob_builder.root(l3config.root.as_str());
-                    Storager::build_one(azblob_builder, None, None, 3)
+                    Storager::build_one(azblob_builder, None, None, 3).await
                 }
                 _ => unimplemented!(),
             };
@@ -137,14 +140,15 @@ impl Storager {
                 Some(Box::new(storager3)),
                 Some(l2_capacity),
                 2,
-            );
+            )
+            .await;
             let storager2_for_backup = storager2.clone();
             tokio::spawn(async move {
                 backup(storager2_for_backup, backup_interval, retreat_interval).await
             });
             storager2
         } else {
-            Storager::build_one(rocksdb_builder, None, None, 2)
+            Storager::build_one(rocksdb_builder, None, None, 2).await
         };
         info!(
             "build storager: layer: {}, scheme: {}",
@@ -153,7 +157,7 @@ impl Storager {
 
         let mem_builder = Memory::default();
         let storager1 =
-            Storager::build_one(mem_builder, Some(Box::new(storager2)), Some(l1_capacity), 1);
+            Storager::build_one(mem_builder, Some(Box::new(storager2)), Some(l1_capacity), 1).await;
         info!(
             "build storager: layer: {}, scheme: {}",
             storager1.layer, storager1.scheme
@@ -794,7 +798,6 @@ mod tests {
         fn prop(args: DBTestArgs) -> bool {
             let dir = tempdir().unwrap();
             let path = dir.path().to_str().unwrap();
-            let storager = Storager::build(path, &CloudStorage::default(), 10, 20, 10, 3);
 
             let region = args.region;
             let key = args.key.clone();
@@ -803,6 +806,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
+                let storager = Storager::build(path, &CloudStorage::default(), 10, 20, 10, 3).await;
                 storager.store(&real_key, value.clone()).await.unwrap();
                 storager.load(&real_key, false).await.unwrap() == value
             })

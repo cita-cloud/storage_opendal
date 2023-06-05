@@ -16,6 +16,7 @@ use cita_cloud_proto::{
     blockchain::{raw_transaction::Tx, Block, CompactBlock, CompactBlockBody},
     storage::Regions,
 };
+use opendal::Operator;
 
 pub fn check_region(region: u32) -> bool {
     region < Regions::Button as u8 as u32
@@ -87,6 +88,21 @@ pub fn clap_about() -> String {
     let version = env!("CARGO_PKG_VERSION");
     let authors = env!("CARGO_PKG_AUTHORS");
     name + " " + version + "\n" + authors
+}
+
+pub async fn check_layer3_availability(op: &Operator) {
+    if let Err(e) = op.write("hello", "cita_cloud").await {
+        panic!(
+            "Layer3 not available! Write failed: {:?}. Check \"storage_opendal.cloud_storage\"",
+            e
+        )
+    }
+    if let Err(e) = op.read("hello").await {
+        panic!(
+            "Layer3 not available! Read failed: {:?}. Check \"storage_opendal.cloud_storage\"",
+            e
+        )
+    }
 }
 
 #[cfg(test)]
