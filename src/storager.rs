@@ -25,7 +25,7 @@ use cita_cloud_proto::{
 use cloud_util::common::get_tx_hash;
 use opendal::{
     layers::RetryLayer,
-    services::{Memory, Rocksdb, S3},
+    services::{Azblob, Cos, Memory, Obs, Oss, Rocksdb, S3},
     Builder, ErrorKind, Operator,
 };
 use prost::Message;
@@ -64,22 +64,64 @@ impl Storager {
 
     pub fn build(
         data_root: &str,
-        s3config: &CloudStorage,
+        l3config: &CloudStorage,
         l1_capacity: u64,
         l2_capacity: u64,
         backup_interval: u64,
         retreat_interval: u64,
     ) -> Self {
-        // if s3config is empty, storager3 is None
-        let storager3 = if s3config.is_empty() {
+        // if l3config is empty, storager3 is None
+        let storager3 = if l3config.is_empty() {
             None
         } else {
-            let mut s3builder = S3::default();
-            s3builder.access_key_id(s3config.access_key_id.as_str());
-            s3builder.secret_access_key(s3config.secret_access_key.as_str());
-            s3builder.endpoint(s3config.endpoint.as_str());
-            s3builder.bucket(s3config.bucket.as_str());
-            let storager3 = Storager::build_one(s3builder, None, None, 3);
+            let storager3 = match l3config.service_type.as_str() {
+                "oss" => {
+                    let mut oss_builder = Oss::default();
+                    oss_builder.access_key_id(l3config.access_key_id.as_str());
+                    oss_builder.access_key_secret(l3config.secret_access_key.as_str());
+                    oss_builder.endpoint(l3config.endpoint.as_str());
+                    oss_builder.bucket(l3config.bucket.as_str());
+                    oss_builder.root(l3config.root.as_str());
+                    Storager::build_one(oss_builder, None, None, 3)
+                }
+                "obs" => {
+                    let mut obs_builder = Obs::default();
+                    obs_builder.access_key_id(l3config.access_key_id.as_str());
+                    obs_builder.secret_access_key(l3config.secret_access_key.as_str());
+                    obs_builder.endpoint(l3config.endpoint.as_str());
+                    obs_builder.bucket(l3config.bucket.as_str());
+                    obs_builder.root(l3config.root.as_str());
+                    Storager::build_one(obs_builder, None, None, 3)
+                }
+                "cos" => {
+                    let mut cos_builder = Cos::default();
+                    cos_builder.secret_id(l3config.access_key_id.as_str());
+                    cos_builder.secret_key(l3config.secret_access_key.as_str());
+                    cos_builder.endpoint(l3config.endpoint.as_str());
+                    cos_builder.bucket(l3config.bucket.as_str());
+                    cos_builder.root(l3config.root.as_str());
+                    Storager::build_one(cos_builder, None, None, 3)
+                }
+                "s3" => {
+                    let mut s3_builder = S3::default();
+                    s3_builder.access_key_id(l3config.access_key_id.as_str());
+                    s3_builder.secret_access_key(l3config.secret_access_key.as_str());
+                    s3_builder.endpoint(l3config.endpoint.as_str());
+                    s3_builder.bucket(l3config.bucket.as_str());
+                    s3_builder.root(l3config.root.as_str());
+                    Storager::build_one(s3_builder, None, None, 3)
+                }
+                "azblob" => {
+                    let mut azblob_builder = Azblob::default();
+                    azblob_builder.account_name(l3config.access_key_id.as_str());
+                    azblob_builder.account_key(l3config.secret_access_key.as_str());
+                    azblob_builder.endpoint(l3config.endpoint.as_str());
+                    azblob_builder.container(l3config.bucket.as_str());
+                    azblob_builder.root(l3config.root.as_str());
+                    Storager::build_one(azblob_builder, None, None, 3)
+                }
+                _ => unimplemented!(),
+            };
             info!(
                 "build storager: layer: {}, scheme: {}",
                 storager3.layer, storager3.scheme

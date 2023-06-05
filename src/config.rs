@@ -16,32 +16,25 @@ use cloud_util::{common::read_toml, tracer::LogConfig};
 use serde::Serialize;
 use serde_derive::Deserialize;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CloudStorage {
-    pub access_key_id: String,
-    pub secret_access_key: String,
+    pub service_type: String,
+    pub access_key_id: String, //as Cos secret_id, as Azblob account_name
+    pub secret_access_key: String, // as Cos secret_key, as Azblob account_key
     pub endpoint: String,
-    pub bucket: String,
-}
-
-impl Default for CloudStorage {
-    fn default() -> Self {
-        Self {
-            access_key_id: "".to_string(),
-            secret_access_key: "".to_string(),
-            endpoint: "".to_string(),
-            bucket: "".to_string(),
-        }
-    }
+    pub bucket: String, // as Azblob container
+    pub root: String,
 }
 
 impl CloudStorage {
     pub fn is_empty(&self) -> bool {
-        self.access_key_id.is_empty()
+        self.service_type.is_empty()
+            && self.access_key_id.is_empty()
             && self.secret_access_key.is_empty()
             && self.endpoint.is_empty()
             && self.bucket.is_empty()
+            && self.root.is_empty()
     }
 }
 

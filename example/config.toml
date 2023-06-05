@@ -12,8 +12,9 @@ filter = "info"
 service_name = "storage"
 # agent_endpoint = "127.0.0.1:6831"
 
-# [storage_opendal.cloud_storage]
-# access_key_id = "HRBuyMi0uH6POuDD"
-# secret_access_key = "d65Vo1UuKmsWMssdv0Ky85JYue5kpenX"
-# endpoint = "http://192.168.10.122:30289"
+[storage_opendal.cloud_storage]
+# service_type = "s3"
+# access_key_id = "ofOlkV2ICzfVe7e8kviW"
 # bucket = "opendal"
+# endpoint = "http://192.168.10.122:30289"
+# secret_access_key = "rkaYah8Wnb1YGrFhMfpp3K43n8ABglGlcn3TUpxq"
