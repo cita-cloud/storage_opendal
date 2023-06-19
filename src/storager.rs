@@ -712,15 +712,27 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             );
             for height in delete_height + 1..=local_height - capacity {
                 if let Err(e) = local.delete_outdate(height).await {
-                    warn!(
-                        "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
-                        height,
-                        e.to_string(),
-                        local.layer,
-                        local.scheme
-                    );
-                    continue 'backup_round;
-                } else if let Err(e) = local
+                    if e != StatusCodeEnum::NotFound {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                        continue 'backup_round;
+                    } else {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. already deleted",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                    }
+                }
+                // update delete height
+                if let Err(e) = local
                     .store(&delete_real_key, height.to_be_bytes().to_vec())
                     .await
                 {
