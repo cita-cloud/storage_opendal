@@ -31,7 +31,6 @@ use opendal::{
 use prost::Message;
 use rand::Rng;
 use std::time::Duration;
-use tokio::task;
 
 #[derive(Clone)]
 pub struct Storager {
@@ -526,12 +525,10 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
     let max_interval = backup_interval_secs * 4 / 3;
     'backup_round: loop {
         // sleep
-        let backup_interval = task::spawn_blocking(move || {
+        let backup_interval = {
             let mut rng = rand::thread_rng();
             rng.gen_range(min_interval..=max_interval)
-        })
-        .await
-        .unwrap();
+        };
         tokio::time::sleep(Duration::from_secs(backup_interval)).await;
 
         // avoid concurrent backup
@@ -712,15 +709,27 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             );
             for height in delete_height + 1..=local_height - capacity {
                 if let Err(e) = local.delete_outdate(height).await {
-                    warn!(
-                        "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
-                        height,
-                        e.to_string(),
-                        local.layer,
-                        local.scheme
-                    );
-                    continue 'backup_round;
-                } else if let Err(e) = local
+                    if e != StatusCodeEnum::NotFound {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                        continue 'backup_round;
+                    } else {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. already deleted",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                    }
+                }
+                // update delete height
+                if let Err(e) = local
                     .store(&delete_real_key, height.to_be_bytes().to_vec())
                     .await
                 {
