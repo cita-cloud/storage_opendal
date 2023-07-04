@@ -45,7 +45,7 @@ impl Health for HealthCheckServer {
         let real_key = get_real_key(i32::from(Regions::Global) as u32, &u64::MAX.to_be_bytes());
         let store_ret = self
             .storager
-            .store(&real_key, u64::MAX.to_be_bytes().to_vec())
+            .store(&real_key, &u64::MAX.to_be_bytes())
             .await;
         let load_ret = self.storager.load(&real_key, false).await;
 
