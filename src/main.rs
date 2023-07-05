@@ -112,7 +112,7 @@ impl StorageService for StorageServer {
         let real_key = get_real_key(region, &key);
 
         if region == 12 {
-            match self.storager.store_all_block_data(key.clone(), value).await {
+            match self.storager.store_all_block_data(&key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => {
                     let height = u64_decode(&key);
@@ -121,7 +121,7 @@ impl StorageService for StorageServer {
                 }
             }
         } else {
-            match self.storager.store(&real_key, value).await {
+            match self.storager.store(&real_key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => Ok(Response::new(status.into())),
             }
@@ -152,7 +152,7 @@ impl StorageService for StorageServer {
         let real_key = get_real_key(region, &key);
 
         if region == 11 {
-            match self.storager.load_full_block(key.clone()).await {
+            match self.storager.load_full_block(&key).await {
                 Ok(value) => Ok(Response::new(Value {
                     status: Some(StatusCodeEnum::Success.into()),
                     value,

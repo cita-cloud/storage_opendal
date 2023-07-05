@@ -249,17 +249,17 @@ impl Storager {
 // storage API
 impl Storager {
     #[async_recursion]
-    pub async fn store(&self, real_key: &str, value: Vec<u8>) -> Result<(), StatusCodeEnum> {
+    pub async fn store(&self, real_key: &str, value: &[u8]) -> Result<(), StatusCodeEnum> {
         let (region, key) = get_raw_key(real_key);
 
-        match self.operator.write(real_key, value.clone()).await {
+        match self.operator.write(real_key, value.to_owned()).await {
             Ok(()) => match self.layer {
                 1 => {
                     // layer 1 will wait for layer 2 to store
                     if let Some(next) = self.next_storager.as_ref() {
-                        next.store(real_key, value.clone()).await?;
+                        next.store(real_key, value).await?;
                         if region == 0 && key == *"0" {
-                            let height = u64_decode(&value);
+                            let height = u64_decode(value);
                             info!(
                                 "store block({}) succeed: layer: {}, scheme: {}",
                                 height, self.layer, self.scheme
@@ -270,7 +270,7 @@ impl Storager {
                 }
                 2 => {
                     if region == 0 && key == *"0" {
-                        let height = u64_decode(&value);
+                        let height = u64_decode(value);
                         info!(
                             "store block({}) succeed: layer: {}, scheme: {}",
                             height, self.layer, self.scheme
@@ -338,10 +338,10 @@ impl Storager {
 impl Storager {
     pub async fn store_all_block_data(
         &self,
-        height_bytes: Vec<u8>,
-        block_bytes: Vec<u8>,
+        height_bytes: &[u8],
+        block_bytes: &[u8],
     ) -> Result<(), StatusCodeEnum> {
-        let height = u64_decode(&height_bytes);
+        let height = u64_decode(height_bytes);
         info!("store block({}): start", height);
 
         let block_hash = block_bytes[..32].to_vec();
@@ -351,6 +351,7 @@ impl Storager {
             StatusCodeEnum::DecodeError
         })?;
 
+        let mut handles = vec![];
         for (tx_index, raw_tx) in block
             .body
             .clone()
@@ -359,45 +360,62 @@ impl Storager {
             .into_iter()
             .enumerate()
         {
-            let mut tx_bytes = Vec::new();
-            raw_tx.encode(&mut tx_bytes).map_err(|_| {
-                warn!(
-                    "store block({}) failed: encode RawTransaction failed",
-                    height
-                );
-                StatusCodeEnum::EncodeError
-            })?;
+            let storager = self.clone();
+            let height_bytes = height_bytes.to_owned();
+            let h: tokio::task::JoinHandle<Result<(), StatusCodeEnum>> = tokio::spawn(async move {
+                let mut tx_bytes = Vec::new();
+                raw_tx.encode(&mut tx_bytes).map_err(|_| {
+                    warn!(
+                        "store block({}) failed: encode RawTransaction failed",
+                        height
+                    );
+                    StatusCodeEnum::EncodeError
+                })?;
 
-            let tx_hash = get_tx_hash(&raw_tx)?.to_vec();
-            self.store(
-                &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
-                tx_bytes,
-            )
-            .await?;
+                let tx_hash = get_tx_hash(&raw_tx)?.to_vec();
+                storager
+                    .store(
+                        &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
+                        &tx_bytes,
+                    )
+                    .await?;
 
-            self.store(
-                &get_real_key(
-                    i32::from(Regions::TransactionHash2blockHeight) as u32,
-                    &tx_hash,
-                ),
-                height_bytes.clone(),
-            )
-            .await?;
-            self.store(
-                &get_real_key(i32::from(Regions::TransactionIndex) as u32, &tx_hash),
-                tx_index.to_be_bytes().to_vec(),
-            )
-            .await?;
+                storager
+                    .store(
+                        &get_real_key(
+                            i32::from(Regions::TransactionHash2blockHeight) as u32,
+                            &tx_hash,
+                        ),
+                        &height_bytes,
+                    )
+                    .await?;
+                storager
+                    .store(
+                        &get_real_key(i32::from(Regions::TransactionIndex) as u32, &tx_hash),
+                        &tx_index.to_be_bytes(),
+                    )
+                    .await?;
+                Ok(())
+            });
+            handles.push(h);
+        }
+        for h in handles {
+            h.await
+                .map_err(|_| StatusCodeEnum::StoreError)?
+                .map_err(|e| {
+                    warn!("store block({}) failed: store tx failed: {}", height, e);
+                    e
+                })?;
         }
 
         self.store(
-            &get_real_key(i32::from(Regions::BlockHash) as u32, &height_bytes),
-            block_hash.clone(),
+            &get_real_key(i32::from(Regions::BlockHash) as u32, height_bytes),
+            &block_hash,
         )
         .await?;
         self.store(
-            &get_real_key(i32::from(Regions::Result) as u32, &height_bytes),
-            block.state_root.clone(),
+            &get_real_key(i32::from(Regions::Result) as u32, height_bytes),
+            &block.state_root,
         )
         .await?;
         self.store(
@@ -405,7 +423,7 @@ impl Storager {
                 i32::from(Regions::BlockHash2blockHeight) as u32,
                 &block_hash,
             ),
-            height_bytes.clone(),
+            height_bytes,
         )
         .await?;
 
@@ -418,26 +436,26 @@ impl Storager {
                 StatusCodeEnum::EncodeError
             })?;
         self.store(
-            &get_real_key(i32::from(Regions::CompactBlock) as u32, &height_bytes),
-            compact_block_bytes,
+            &get_real_key(i32::from(Regions::CompactBlock) as u32, height_bytes),
+            &compact_block_bytes,
         )
         .await?;
 
         self.store(
-            &get_real_key(i32::from(Regions::Proof) as u32, &height_bytes),
-            block.proof,
+            &get_real_key(i32::from(Regions::Proof) as u32, height_bytes),
+            &block.proof,
         )
         .await?;
 
         self.store(
             &get_real_key(i32::from(Regions::Global) as u32, &0u64.to_be_bytes()),
-            height_bytes.clone(),
+            height_bytes,
         )
         .await?;
 
         if let Some(capacity) = self.capacity {
             if height >= capacity {
-                let height = u64_decode(&height_bytes);
+                let height = u64_decode(height_bytes);
                 let storager_for_delete = self.clone();
                 tokio::spawn(async move {
                     let _ = storager_for_delete.delete_outdate(height - capacity).await;
@@ -448,12 +466,12 @@ impl Storager {
         Ok(())
     }
 
-    pub async fn load_full_block(&self, height_bytes: Vec<u8>) -> Result<Vec<u8>, StatusCodeEnum> {
-        let height = u64_decode(&height_bytes);
+    pub async fn load_full_block(&self, height_bytes: &[u8]) -> Result<Vec<u8>, StatusCodeEnum> {
+        let height = u64_decode(height_bytes);
         // get compact_block
         let compact_block_bytes = self
             .load(
-                &get_real_key(i32::from(Regions::CompactBlock) as u32, &height_bytes),
+                &get_real_key(i32::from(Regions::CompactBlock) as u32, height_bytes),
                 true,
             )
             .await?;
@@ -463,35 +481,51 @@ impl Storager {
         })?;
 
         let mut body = Vec::new();
+        let mut handles = vec![];
         if let Some(compact_body) = compact_block.body {
             for tx_hash in compact_body.tx_hashes {
-                let tx_bytes = self
-                    .load(
-                        &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
-                        true,
-                    )
-                    .await?;
-                let raw_tx = RawTransaction::decode(tx_bytes.as_slice()).map_err(|_| {
-                    warn!(
-                        "load block({}) failed: decode RawTransaction failed",
-                        height
-                    );
-                    StatusCodeEnum::DecodeError
-                })?;
-                body.push(raw_tx)
+                let storager = self.clone();
+                let h: tokio::task::JoinHandle<Result<RawTransaction, StatusCodeEnum>> =
+                    tokio::spawn(async move {
+                        let tx_bytes = storager
+                            .load(
+                                &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
+                                true,
+                            )
+                            .await?;
+                        let raw_tx = RawTransaction::decode(tx_bytes.as_slice()).map_err(|_| {
+                            warn!(
+                                "load block({}) failed: decode RawTransaction failed",
+                                height
+                            );
+                            StatusCodeEnum::DecodeError
+                        })?;
+                        Ok(raw_tx)
+                    });
+                handles.push(h);
             }
+        }
+        for h in handles {
+            let raw_tx = h
+                .await
+                .map_err(|_| StatusCodeEnum::LoadError)?
+                .map_err(|e| {
+                    warn!("load block({}) failed: load tx failed: {}", height, e);
+                    e
+                })?;
+            body.push(raw_tx)
         }
 
         let proof = self
             .load(
-                &get_real_key(i32::from(Regions::Proof) as u32, &height_bytes),
+                &get_real_key(i32::from(Regions::Proof) as u32, height_bytes),
                 true,
             )
             .await?;
 
         let state_root = self
             .load(
-                &get_real_key(i32::from(Regions::Result) as u32, &height_bytes),
+                &get_real_key(i32::from(Regions::Result) as u32, height_bytes),
                 true,
             )
             .await?;
@@ -638,7 +672,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                                 return false;
                             }
                         };
-                        if let Err(e) = remote.store(&real_key, value).await {
+                        if let Err(e) = remote.store(&real_key, &value).await {
                             let (region, key) = get_raw_key(&real_key);
                             warn!(
                                     "backup({}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
@@ -664,7 +698,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                 }
             }
             if let Err(e) = remote
-                .store(&remote_height_real_key, height.to_be_bytes().to_vec())
+                .store(&remote_height_real_key, &height.to_be_bytes())
                 .await
             {
                 warn!(
@@ -729,10 +763,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                     }
                 }
                 // update delete height
-                if let Err(e) = local
-                    .store(&delete_real_key, height.to_be_bytes().to_vec())
-                    .await
-                {
+                if let Err(e) = local.store(&delete_real_key, &height.to_be_bytes()).await {
                     warn!(
                         "delete outdate({}) failed: update delete height failed: {}. layer: {}, scheme: {}. skip this round",
                         height,
@@ -816,7 +847,7 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let storager = Storager::build(path, &CloudStorage::default(), 10, 20, 10, 3).await;
-                storager.store(&real_key, value.clone()).await.unwrap();
+                storager.store(&real_key, &value).await.unwrap();
                 storager.load(&real_key, false).await.unwrap() == value
             })
         }
