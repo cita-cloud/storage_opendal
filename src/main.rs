@@ -35,7 +35,6 @@ use cita_cloud_proto::storage::{
 };
 use clap::Parser;
 use cloud_util::metrics::{run_metrics_exporter, MiddlewareLayer};
-use cloud_util::panic_hook::set_panic_handler;
 use std::net::AddrParseError;
 use std::path::Path;
 use std::sync::Arc;
@@ -66,14 +65,14 @@ struct RunOpts {
 
 fn main() {
     ::std::env::set_var("RUST_BACKTRACE", "full");
-    set_panic_handler();
 
     let opts: Opts = Opts::parse();
 
     match opts.subcmd {
         SubCommand::Run(opts) => {
-            let fin = run(opts);
-            warn!("unreachable: {:?}", fin);
+            if let Err(e) = run(opts) {
+                warn!("unreachable: {:?}", e);
+            }
         }
     }
 }
@@ -231,7 +230,7 @@ impl StorageService for StorageServer {
 
 #[tokio::main]
 async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
-    tokio::spawn(cloud_util::signal::handle_signals());
+    let rx_signal = cloud_util::graceful_shutdown::graceful_shutdown();
 
     let config = StorageConfig::new(&opts.config_path);
 
@@ -291,7 +290,10 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
                 StorageServiceServer::new(storage_server).max_decoding_message_size(usize::MAX),
             )
             .add_service(HealthServer::new(HealthCheckServer::new(storager)))
-            .serve(addr)
+            .serve_with_shutdown(
+                addr,
+                cloud_util::graceful_shutdown::grpc_serve_listen_term(rx_signal),
+            )
             .await
             .map_err(|e| {
                 warn!("start storage_opendal grpc server failed: {:?}", e);
@@ -304,7 +306,10 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
                 StorageServiceServer::new(storage_server).max_decoding_message_size(usize::MAX),
             )
             .add_service(HealthServer::new(HealthCheckServer::new(storager)))
-            .serve(addr)
+            .serve_with_shutdown(
+                addr,
+                cloud_util::graceful_shutdown::grpc_serve_listen_term(rx_signal),
+            )
             .await
             .map_err(|e| {
                 warn!("start storage_opendal grpc server failed: {:?}", e);
