@@ -45,8 +45,12 @@ pub fn u64_decode(data: &[u8]) -> u64 {
     u64::from_be_bytes(data.try_into().unwrap())
 }
 
-pub fn get_real_key(region: u32, key: &[u8]) -> String {
+pub fn get_real_key_by_u32(region: u32, key: &[u8]) -> String {
     hex::encode([region.to_be_bytes().as_slice(), key].concat())
+}
+
+pub fn get_real_key(region: Regions, key: &[u8]) -> String {
+    hex::encode([(region as u32).to_be_bytes().as_slice(), key].concat())
 }
 
 pub fn get_raw_key(real_key: &str) -> (u32, String) {
@@ -111,7 +115,7 @@ mod tests {
 
     #[test]
     fn get_key_convert_test() {
-        let region = 5u32;
+        let region = Regions::Proof;
         let raw_key = 16u64;
         let real_key = get_real_key(region, &raw_key.to_be_bytes());
         let (region, key) = get_raw_key(&real_key);
@@ -119,7 +123,7 @@ mod tests {
         assert_eq!(key, 16.to_string());
 
         let raw_key = hex::decode("c356876e7f4831476f99ea0593b0cd7a6053e4d3").unwrap();
-        let real_key = get_real_key(region, &raw_key);
+        let real_key = get_real_key_by_u32(region, &raw_key);
         let (region, key) = get_raw_key(&real_key);
         assert_eq!(region, 5u32);
         assert_eq!(key, "0xc356876e7f4831476f99ea0593b0cd7a6053e4d3");

@@ -24,11 +24,13 @@ use crate::config::StorageConfig;
 use crate::health_check::HealthCheckServer;
 use crate::util::clap_about;
 use crate::util::get_real_key;
+use crate::util::get_real_key_by_u32;
 use crate::util::u64_decode;
 use crate::util::{check_key, check_region, check_value};
 use cita_cloud_proto::common::StatusCode;
 use cita_cloud_proto::health_check::health_server::HealthServer;
 use cita_cloud_proto::status_code::StatusCodeEnum;
+use cita_cloud_proto::storage::Regions;
 use cita_cloud_proto::storage::{
     storage_service_server::StorageService, storage_service_server::StorageServiceServer, Content,
     ExtKey, Value,
@@ -108,9 +110,9 @@ impl StorageService for StorageServer {
         if !check_value(region, &value) {
             return Ok(Response::new(StatusCodeEnum::InvalidValue.into()));
         }
-        let real_key = get_real_key(region, &key);
+        let real_key = get_real_key_by_u32(region, &key);
 
-        if region == 12 {
+        if region == Regions::AllBlockData as u32 {
             match self.storager.store_all_block_data(&key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => {
@@ -148,9 +150,9 @@ impl StorageService for StorageServer {
                 value: vec![],
             }));
         }
-        let real_key = get_real_key(region, &key);
+        let real_key = get_real_key_by_u32(region, &key);
 
-        if region == 11 {
+        if region == Regions::FullBlock as u32 {
             match self.storager.load_full_block(&key).await {
                 Ok(value) => Ok(Response::new(Value {
                     status: Some(StatusCodeEnum::Success.into()),
@@ -165,11 +167,11 @@ impl StorageService for StorageServer {
                     }))
                 }
             }
-        } else if key == 1u64.to_be_bytes().to_vec() && region == 0 {
-            let height_real_key = get_real_key(region, &0u64.to_be_bytes());
+        } else if key == 1u64.to_be_bytes().to_vec() && region == Regions::Global as u32 {
+            let height_real_key = get_real_key_by_u32(region, &0u64.to_be_bytes());
             match self.storager.load(&height_real_key, true).await {
                 Ok(height) => {
-                    let hash_real_key = get_real_key(4, &height);
+                    let hash_real_key = get_real_key(Regions::BlockHash, &height);
                     match self.storager.load(&hash_real_key, true).await {
                         Ok(value) => Ok(Response::new(Value {
                             status: Some(StatusCodeEnum::Success.into()),

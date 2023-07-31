@@ -42,7 +42,7 @@ impl Health for HealthCheckServer {
     ) -> Result<Response<HealthCheckResponse>, Status> {
         info!("healthcheck entry!");
 
-        let real_key = get_real_key(i32::from(Regions::Global) as u32, &u64::MAX.to_be_bytes());
+        let real_key = get_real_key(Regions::Global, &u64::MAX.to_be_bytes());
         let store_ret = self
             .storager
             .store(&real_key, &u64::MAX.to_be_bytes())

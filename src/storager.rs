@@ -180,8 +180,7 @@ impl Storager {
 
         let mut keys = Vec::new();
 
-        let compact_block_key =
-            get_real_key(i32::from(Regions::CompactBlock) as u32, &height_bytes);
+        let compact_block_key = get_real_key(Regions::CompactBlock, &height_bytes);
         let compact_block_bytes = self.load(&compact_block_key, recursive).await?;
         let compact_block = CompactBlock::decode(compact_block_bytes.as_slice()).map_err(|_| {
             warn!(
@@ -192,38 +191,20 @@ impl Storager {
         })?;
         if let Some(compact_body) = compact_block.body {
             for tx_hash in compact_body.tx_hashes {
-                keys.push(get_real_key(
-                    i32::from(Regions::Transactions) as u32,
-                    &tx_hash,
-                ));
-                keys.push(get_real_key(
-                    i32::from(Regions::TransactionHash2blockHeight) as u32,
-                    &tx_hash,
-                ));
-                keys.push(get_real_key(
-                    i32::from(Regions::TransactionIndex) as u32,
-                    &tx_hash,
-                ));
+                keys.push(get_real_key(Regions::Transactions, &tx_hash));
+                keys.push(get_real_key(Regions::TransactionHash2blockHeight, &tx_hash));
+                keys.push(get_real_key(Regions::TransactionIndex, &tx_hash));
             }
         }
         keys.push(compact_block_key);
 
-        let block_hash_key = get_real_key(i32::from(Regions::BlockHash) as u32, &height_bytes);
+        let block_hash_key = get_real_key(Regions::BlockHash, &height_bytes);
         let hash = self.load(&block_hash_key, recursive).await?;
         keys.push(block_hash_key);
-        keys.push(get_real_key(
-            i32::from(Regions::BlockHash2blockHeight) as u32,
-            &hash,
-        ));
+        keys.push(get_real_key(Regions::BlockHash2blockHeight, &hash));
 
-        keys.push(get_real_key(
-            i32::from(Regions::Proof) as u32,
-            &height_bytes,
-        ));
-        keys.push(get_real_key(
-            i32::from(Regions::Result) as u32,
-            &height_bytes,
-        ));
+        keys.push(get_real_key(Regions::Proof, &height_bytes));
+        keys.push(get_real_key(Regions::Result, &height_bytes));
 
         Ok(keys)
     }
@@ -258,7 +239,7 @@ impl Storager {
                     // layer 1 will wait for layer 2 to store
                     if let Some(next) = self.next_storager.as_ref() {
                         next.store(real_key, value).await?;
-                        if region == 0 && key == *"0" {
+                        if region == Regions::Global as u32 && key == *"0" {
                             let height = u64_decode(value);
                             info!(
                                 "store block({}) succeed: layer: {}, scheme: {}",
@@ -269,7 +250,7 @@ impl Storager {
                     Ok(())
                 }
                 2 => {
-                    if region == 0 && key == *"0" {
+                    if region == Regions::Global as u32 && key == *"0" {
                         let height = u64_decode(value);
                         info!(
                             "store block({}) succeed: layer: {}, scheme: {}",
@@ -301,7 +282,7 @@ impl Storager {
         match self.operator.read(real_key).await {
             Ok(v) => {
                 // region 5 is Proof, only get full block will load it
-                if region == 5 && recursive {
+                if region == Regions::Proof as u32 && recursive {
                     info!(
                         "load block({}) succeed: layer: {}, scheme: {}",
                         key, self.layer, self.scheme
@@ -374,24 +355,18 @@ impl Storager {
 
                 let tx_hash = get_tx_hash(&raw_tx)?.to_vec();
                 storager
-                    .store(
-                        &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
-                        &tx_bytes,
-                    )
+                    .store(&get_real_key(Regions::Transactions, &tx_hash), &tx_bytes)
                     .await?;
 
                 storager
                     .store(
-                        &get_real_key(
-                            i32::from(Regions::TransactionHash2blockHeight) as u32,
-                            &tx_hash,
-                        ),
+                        &get_real_key(Regions::TransactionHash2blockHeight, &tx_hash),
                         &height_bytes,
                     )
                     .await?;
                 storager
                     .store(
-                        &get_real_key(i32::from(Regions::TransactionIndex) as u32, &tx_hash),
+                        &get_real_key(Regions::TransactionIndex, &tx_hash),
                         &tx_index.to_be_bytes(),
                     )
                     .await?;
@@ -408,21 +383,15 @@ impl Storager {
                 })?;
         }
 
+        self.store(&get_real_key(Regions::BlockHash, height_bytes), &block_hash)
+            .await?;
         self.store(
-            &get_real_key(i32::from(Regions::BlockHash) as u32, height_bytes),
-            &block_hash,
-        )
-        .await?;
-        self.store(
-            &get_real_key(i32::from(Regions::Result) as u32, height_bytes),
+            &get_real_key(Regions::Result, height_bytes),
             &block.state_root,
         )
         .await?;
         self.store(
-            &get_real_key(
-                i32::from(Regions::BlockHash2blockHeight) as u32,
-                &block_hash,
-            ),
+            &get_real_key(Regions::BlockHash2blockHeight, &block_hash),
             height_bytes,
         )
         .await?;
@@ -436,19 +405,16 @@ impl Storager {
                 StatusCodeEnum::EncodeError
             })?;
         self.store(
-            &get_real_key(i32::from(Regions::CompactBlock) as u32, height_bytes),
+            &get_real_key(Regions::CompactBlock, height_bytes),
             &compact_block_bytes,
         )
         .await?;
 
-        self.store(
-            &get_real_key(i32::from(Regions::Proof) as u32, height_bytes),
-            &block.proof,
-        )
-        .await?;
+        self.store(&get_real_key(Regions::Proof, height_bytes), &block.proof)
+            .await?;
 
         self.store(
-            &get_real_key(i32::from(Regions::Global) as u32, &0u64.to_be_bytes()),
+            &get_real_key(Regions::Global, &0u64.to_be_bytes()),
             height_bytes,
         )
         .await?;
@@ -470,10 +436,7 @@ impl Storager {
         let height = u64_decode(height_bytes);
         // get compact_block
         let compact_block_bytes = self
-            .load(
-                &get_real_key(i32::from(Regions::CompactBlock) as u32, height_bytes),
-                true,
-            )
+            .load(&get_real_key(Regions::CompactBlock, height_bytes), true)
             .await?;
         let compact_block = CompactBlock::decode(compact_block_bytes.as_slice()).map_err(|_| {
             warn!("load block({}) failed: decode CompactBlock failed", height);
@@ -488,10 +451,7 @@ impl Storager {
                 let h: tokio::task::JoinHandle<Result<RawTransaction, StatusCodeEnum>> =
                     tokio::spawn(async move {
                         let tx_bytes = storager
-                            .load(
-                                &get_real_key(i32::from(Regions::Transactions) as u32, &tx_hash),
-                                true,
-                            )
+                            .load(&get_real_key(Regions::Transactions, &tx_hash), true)
                             .await?;
                         let raw_tx = RawTransaction::decode(tx_bytes.as_slice()).map_err(|_| {
                             warn!(
@@ -517,17 +477,11 @@ impl Storager {
         }
 
         let proof = self
-            .load(
-                &get_real_key(i32::from(Regions::Proof) as u32, height_bytes),
-                true,
-            )
+            .load(&get_real_key(Regions::Proof, height_bytes), true)
             .await?;
 
         let state_root = self
-            .load(
-                &get_real_key(i32::from(Regions::Result) as u32, height_bytes),
-                true,
-            )
+            .load(&get_real_key(Regions::Result, height_bytes), true)
             .await?;
 
         let block = Block {
@@ -551,9 +505,9 @@ impl Storager {
 async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_secs: u64) {
     let capacity = local.capacity.unwrap();
     let remote = local.next_storager.as_ref().unwrap();
-    let local_height_real_key = get_real_key(0, &0u64.to_be_bytes());
-    let remote_height_real_key = get_real_key(0, &1u64.to_be_bytes());
-    let delete_real_key = get_real_key(0, &2u64.to_be_bytes());
+    let local_height_real_key = get_real_key(Regions::Global, &0u64.to_be_bytes());
+    let remote_height_real_key = get_real_key(Regions::Global, &1u64.to_be_bytes());
+    let delete_real_key = get_real_key(Regions::Global, &2u64.to_be_bytes());
 
     let min_interval = backup_interval_secs * 2 / 3;
     let max_interval = backup_interval_secs * 4 / 3;
@@ -780,6 +734,8 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
 
 #[cfg(test)]
 mod tests {
+    use crate::util::get_real_key_by_u32;
+
     use super::*;
     use quickcheck::quickcheck;
     use quickcheck::Arbitrary;
@@ -842,7 +798,7 @@ mod tests {
             let region = args.region;
             let key = args.key.clone();
             let value = args.value;
-            let real_key = get_real_key(region, &key);
+            let real_key = get_real_key_by_u32(region, &key);
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
