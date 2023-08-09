@@ -17,12 +17,10 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "0.38", features = ["services-rocksdb"] }
-# opendal disable all default features, so we need to enable them manually
-rocksdb = "0.21"
+opendal = { version = "0.39", features = ["services-rocksdb"], path = "../../../code/opendal/core" }
 
-cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
-cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
+cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs", branch = "tx_pool" }
+cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs", branch = "tx_pool" }
 
 [[bin]]
 name = "bench"
