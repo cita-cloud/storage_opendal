@@ -315,6 +315,13 @@ impl Storager {
                 Err(StatusCodeEnum::NotFound)
             }
         } else {
+            info!(
+                "scan '{}' down: layer: {}, scheme: {}, count: {}",
+                dir,
+                self.layer,
+                self.scheme,
+                hashes.len()
+            );
             Ok(hashes)
         }
     }
@@ -424,9 +431,20 @@ impl Storager {
         )
         .await?;
 
+        // remove outdate hash of tx_pool
+        if height >= 100 {
+            let _ = self
+                .operator
+                .remove_all(&format!(
+                    "{}/{}/",
+                    Regions::TransactionsPool as u32,
+                    height - 100,
+                ))
+                .await;
+        }
+
         if let Some(capacity) = self.capacity {
             if height >= capacity {
-                let height = u64_decode(height_bytes);
                 let storager_for_delete = self.clone();
                 tokio::spawn(async move {
                     let _ = storager_for_delete.delete_outdate(height - capacity).await;
