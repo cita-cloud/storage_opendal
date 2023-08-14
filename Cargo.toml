@@ -17,7 +17,10 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "0.39", features = ["services-rocksdb"], path = "../../../code/opendal/core" }
+opendal = { version = "0.39", features = [
+    "services-rocksdb",
+    "services-moka",
+], git = "https://github.com/apache/incubator-opendal" }
 
 cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs", branch = "tx_pool" }
 cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs", branch = "tx_pool" }

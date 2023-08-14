@@ -25,7 +25,7 @@ use cita_cloud_proto::{
 use cloud_util::common::get_tx_hash;
 use opendal::{
     layers::RetryLayer,
-    services::{Azblob, Cos, Memory, Obs, Oss, S3},
+    services::{Azblob, Cos, Moka, Obs, Oss, S3},
     Builder, EntryMode, ErrorKind, Operator,
 };
 use prost::Message;
@@ -154,9 +154,14 @@ impl Storager {
             storager2.layer, storager2.scheme
         );
 
-        let mem_builder = Memory::default();
-        let storager1 =
-            Storager::build_one(mem_builder, Some(Box::new(storager2)), Some(l1_capacity), 1).await;
+        let cache_builder = Moka::default();
+        let storager1 = Storager::build_one(
+            cache_builder,
+            Some(Box::new(storager2)),
+            Some(l1_capacity),
+            1,
+        )
+        .await;
         info!(
             "build storager: layer: {}, scheme: {}",
             storager1.layer, storager1.scheme
