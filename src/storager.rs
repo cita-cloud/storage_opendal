@@ -437,16 +437,10 @@ impl Storager {
         .await?;
 
         // remove outdate hash of tx_pool
-        if height >= 100 {
-            let _ = self
-                .operator
-                .remove_all(&format!(
-                    "{}/{}/",
-                    Regions::TransactionsPool as u32,
-                    height - 100,
-                ))
-                .await;
-        }
+        let _ = self
+            .operator
+            .remove_all(&format!("{}/{}/", Regions::TransactionsPool as u32, height,))
+            .await;
 
         if let Some(capacity) = self.capacity {
             if height >= capacity {
