@@ -9,7 +9,7 @@ edition = "2021"
 clap = { version = "4.3", features = ["derive"] }
 tonic = "0.9"
 prost = "0.11"
-tokio = { version = "1.29", features = ["full"] }
+tokio = { version = "1.32", features = ["full"] }
 hex = "0.4"
 serde = "1.0"
 serde_derive = "1.0"
@@ -17,9 +17,10 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "0.38", features = ["services-rocksdb"] }
-# opendal disable all default features, so we need to enable them manually
-rocksdb = "0.21"
+opendal = { version = "0.39", features = [
+    "services-rocksdb",
+    "services-moka",
+], git = "https://github.com/apache/incubator-opendal" }
 
 cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
 cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
@@ -29,7 +30,7 @@ name = "bench"
 path = "benches/main.rs"
 
 [dev-dependencies]
-tempfile = "3.6"
+tempfile = "3.7"
 quickcheck = "1.0"
 
 [profile.release.package."*"]

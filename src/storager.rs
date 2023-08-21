@@ -18,19 +18,19 @@ use crate::{
 };
 use async_recursion::async_recursion;
 use cita_cloud_proto::{
-    blockchain::{Block, CompactBlock, RawTransaction, RawTransactions},
+    blockchain::{raw_transaction::Tx, Block, CompactBlock, RawTransaction, RawTransactions},
     status_code::StatusCodeEnum,
     storage::Regions,
 };
 use cloud_util::common::get_tx_hash;
 use opendal::{
     layers::RetryLayer,
-    services::{Azblob, Cos, Memory, Obs, Oss, Rocksdb, S3},
-    Builder, ErrorKind, Operator,
+    services::{Azblob, Cos, Moka, Obs, Oss, S3},
+    Builder, EntryMode, ErrorKind, Operator,
 };
 use prost::Message;
 use rand::Rng;
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 #[derive(Clone)]
 pub struct Storager {
@@ -131,11 +131,11 @@ impl Storager {
             Some(storager3)
         };
 
-        let mut rocksdb_builder = Rocksdb::default();
-        rocksdb_builder.datadir(data_root);
+        let mut layer2_builder = opendal::services::Rocksdb::default();
+        layer2_builder.datadir(data_root);
         let storager2 = if let Some(storager3) = storager3 {
             let storager2 = Storager::build_one(
-                rocksdb_builder,
+                layer2_builder,
                 Some(Box::new(storager3)),
                 Some(l2_capacity),
                 2,
@@ -147,16 +147,21 @@ impl Storager {
             });
             storager2
         } else {
-            Storager::build_one(rocksdb_builder, None, None, 2).await
+            Storager::build_one(layer2_builder, None, None, 2).await
         };
         info!(
             "build storager: layer: {}, scheme: {}",
             storager2.layer, storager2.scheme
         );
 
-        let mem_builder = Memory::default();
-        let storager1 =
-            Storager::build_one(mem_builder, Some(Box::new(storager2)), Some(l1_capacity), 1).await;
+        let cache_builder = Moka::default();
+        let storager1 = Storager::build_one(
+            cache_builder,
+            Some(Box::new(storager2)),
+            Some(l1_capacity),
+            1,
+        )
+        .await;
         info!(
             "build storager: layer: {}, scheme: {}",
             storager1.layer, storager1.scheme
@@ -170,7 +175,7 @@ impl Storager {
         self.operator.is_exist(key).await.unwrap_or(true)
     }
 
-    // collect keys by heihgt
+    // collect keys by height
     async fn collect_keys(
         &self,
         height: u64,
@@ -231,45 +236,25 @@ impl Storager {
 impl Storager {
     #[async_recursion]
     pub async fn store(&self, real_key: &str, value: &[u8]) -> Result<(), StatusCodeEnum> {
-        let (region, key) = get_raw_key(real_key);
-
         match self.operator.write(real_key, value.to_owned()).await {
             Ok(()) => match self.layer {
                 1 => {
                     // layer 1 will wait for layer 2 to store
                     if let Some(next) = self.next_storager.as_ref() {
                         next.store(real_key, value).await?;
-                        if region == Regions::Global as u32 && key == *"0" {
-                            let height = u64_decode(value);
-                            info!(
-                                "store block({}) succeed: layer: {}, scheme: {}",
-                                height, self.layer, self.scheme
-                            );
-                        }
                     }
                     Ok(())
                 }
-                2 => {
-                    if region == Regions::Global as u32 && key == *"0" {
-                        let height = u64_decode(value);
-                        info!(
-                            "store block({}) succeed: layer: {}, scheme: {}",
-                            height, self.layer, self.scheme
-                        );
-                    }
-                    Ok(())
-                }
+                2 => Ok(()),
                 3 => Ok(()),
                 i => unimplemented!("not support layer: {}", i),
             },
             Err(e) => {
                 warn!(
-                    "store data failed: {}. layer: {}, scheme: {}. region: {}, key: {}",
+                    "store data failed: {}. layer: {}, scheme: {}.",
                     e.kind(),
                     self.layer,
                     self.scheme,
-                    region,
-                    key
                 );
                 Err(StatusCodeEnum::StoreError)
             }
@@ -278,18 +263,8 @@ impl Storager {
 
     #[async_recursion]
     pub async fn load(&self, real_key: &str, recursive: bool) -> Result<Vec<u8>, StatusCodeEnum> {
-        let (region, key) = get_raw_key(real_key);
         match self.operator.read(real_key).await {
-            Ok(v) => {
-                // region 5 is Proof, only get full block will load it
-                if region == Regions::Proof as u32 && recursive {
-                    info!(
-                        "load block({}) succeed: layer: {}, scheme: {}",
-                        key, self.layer, self.scheme
-                    );
-                }
-                Ok(v)
-            }
+            Ok(v) => Ok(v),
             Err(e) => match e.kind() {
                 ErrorKind::NotFound => {
                     // if recursive load, try to load from next layer
@@ -305,12 +280,54 @@ impl Storager {
                 }
                 e => {
                     warn!(
-                        "load data failed: {}. layer: {}, scheme: {}. region: {}, key: {}",
-                        e, self.layer, self.scheme, region, key
+                        "load data failed: {}. layer: {}, scheme: {}.",
+                        e, self.layer, self.scheme
                     );
                     Err(StatusCodeEnum::LoadError)
                 }
             },
+        }
+    }
+
+    #[async_recursion]
+    pub async fn scan_name(
+        &self,
+        dir: &str,
+        recursive: bool,
+    ) -> Result<HashSet<String>, StatusCodeEnum> {
+        let lister = self.operator.list(dir).await.map_err(|e| {
+            warn!(
+                "scan '{}' failed: {}. layer: {}, scheme: {}.",
+                dir, e, self.layer, self.scheme
+            );
+            StatusCodeEnum::NotFound
+        })?;
+        let mut hashes = HashSet::new();
+        for entry in lister {
+            let meta = entry.metadata();
+            if EntryMode::FILE == meta.mode() {
+                hashes.insert(entry.name().to_owned());
+            }
+        }
+        if hashes.is_empty() {
+            if recursive {
+                if let Some(storager) = self.next_storager.as_ref() {
+                    storager.scan_name(dir, recursive).await
+                } else {
+                    Err(StatusCodeEnum::NotFound)
+                }
+            } else {
+                Err(StatusCodeEnum::NotFound)
+            }
+        } else {
+            info!(
+                "scan '{}' down: layer: {}, scheme: {}, count: {}",
+                dir,
+                self.layer,
+                self.scheme,
+                hashes.len()
+            );
+            Ok(hashes)
         }
     }
 }
@@ -419,15 +436,22 @@ impl Storager {
         )
         .await?;
 
+        // remove outdate hash of tx_pool
+        let _ = self
+            .operator
+            .remove_all(&format!("{}/{}/", Regions::TransactionsPool as u32, height,))
+            .await;
+
         if let Some(capacity) = self.capacity {
             if height >= capacity {
-                let height = u64_decode(height_bytes);
                 let storager_for_delete = self.clone();
                 tokio::spawn(async move {
                     let _ = storager_for_delete.delete_outdate(height - capacity).await;
                 });
             }
         }
+
+        info!("store block({}): success", height);
 
         Ok(())
     }
@@ -499,6 +523,134 @@ impl Storager {
         })?;
 
         Ok(block_bytes)
+    }
+
+    pub async fn store_transactions_pool(
+        &self,
+        raw_txs_bytes: &[u8],
+    ) -> Result<(), StatusCodeEnum> {
+        let raw_txs = RawTransactions::decode(raw_txs_bytes).map_err(|_| {
+            warn!("store transactions failed: decode Block failed");
+            StatusCodeEnum::DecodeError
+        })?;
+
+        let mut handles = vec![];
+
+        for raw_tx in raw_txs.body {
+            let storager = self.clone();
+            let h: tokio::task::JoinHandle<Result<(), StatusCodeEnum>> = tokio::spawn(async move {
+                let mut tx_bytes = Vec::new();
+                raw_tx.encode(&mut tx_bytes).map_err(|_| {
+                    warn!("store transactions failed: encode RawTransaction failed",);
+                    StatusCodeEnum::EncodeError
+                })?;
+
+                let tx_hash = get_tx_hash(&raw_tx)?.to_vec();
+                let valid_until_block = match raw_tx.tx.unwrap() {
+                    Tx::NormalTx(tx) => tx.transaction.unwrap().valid_until_block,
+                    Tx::UtxoTx(_) => 0,
+                };
+                storager
+                    .store(&get_real_key(Regions::Transactions, &tx_hash), &tx_bytes)
+                    .await?;
+
+                storager
+                    .store(
+                        &format!(
+                            "{}/{}/{}",
+                            Regions::TransactionsPool as u32,
+                            valid_until_block,
+                            hex::encode(tx_hash)
+                        ),
+                        &[],
+                    )
+                    .await?;
+                Ok(())
+            });
+            handles.push(h);
+        }
+
+        for h in handles {
+            h.await
+                .map_err(|_| StatusCodeEnum::StoreError)?
+                .map_err(|e| {
+                    warn!("store transactions failed: {}", e);
+                    e
+                })?;
+        }
+        Ok(())
+    }
+
+    pub async fn reload_transactions_pool(&self) -> Result<Vec<u8>, StatusCodeEnum> {
+        let height = match self
+            .load(&get_real_key(Regions::Global, &0u64.to_be_bytes()), true)
+            .await
+        {
+            Ok(height) => u64_decode(&height),
+            Err(e) => {
+                warn!("reload transactions failed: {}", e);
+                return Err(StatusCodeEnum::LoadError);
+            }
+        };
+        let mut handles = vec![];
+        for valid_until_block in height + 1..=height + 100 {
+            if let Ok(tx_hash_keys) = self
+                .scan_name(
+                    &format!(
+                        "{}/{}/",
+                        Regions::TransactionsPool as u32,
+                        valid_until_block
+                    ),
+                    true,
+                )
+                .await
+            {
+                for tx_hash_key in tx_hash_keys {
+                    let storager = self.clone();
+                    let h: tokio::task::JoinHandle<Result<RawTransaction, StatusCodeEnum>> =
+                        tokio::spawn(async move {
+                            let tx_hash = hex::decode(tx_hash_key).map_err(|_| {
+                                warn!("reload transactions failed: decode tx_hash_key failed");
+                                StatusCodeEnum::DecodeError
+                            })?;
+                            let tx_bytes = storager
+                                .load(&get_real_key(Regions::Transactions, &tx_hash), true)
+                                .await?;
+                            let raw_tx =
+                                RawTransaction::decode(tx_bytes.as_slice()).map_err(|_| {
+                                    warn!(
+                                        "reload transactions failed: decode RawTransaction failed"
+                                    );
+                                    StatusCodeEnum::DecodeError
+                                })?;
+                            Ok(raw_tx)
+                        });
+                    handles.push(h);
+                }
+            }
+        }
+
+        let mut txs = Vec::new();
+        for h in handles {
+            let raw_tx = h
+                .await
+                .map_err(|_| StatusCodeEnum::LoadError)?
+                .map_err(|e| {
+                    warn!("reload transactions failed: {}", e);
+                    e
+                })?;
+            txs.push(raw_tx)
+        }
+
+        info!("reload transactions pool: {}", txs.len());
+
+        let raw_txs = RawTransactions { body: txs };
+        let mut raw_txs_bytes = Vec::new();
+        raw_txs
+            .encode(&mut raw_txs_bytes)
+            .map_err(|_| StatusCodeEnum::EncodeError)?;
+
+        Ok(raw_txs_bytes)
     }
 }
 
@@ -581,16 +733,16 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             continue;
         }
         // for storing genesis block
-        let buckup_start = if remote_height == 0 {
+        let backup_start = if remote_height == 0 {
             0
         } else {
             remote_height + 1
         };
         info!(
             "backup {} - {}: layer{}: {} to layer{}: {}",
-            buckup_start, remote_target, local.layer, local.scheme, remote.layer, remote.scheme
+            backup_start, remote_target, local.layer, local.scheme, remote.layer, remote.scheme
         );
-        for height in buckup_start..=remote_target {
+        for height in backup_start..=remote_target {
             let real_keys = match local.collect_keys(height, false).await {
                 Ok(keys) => keys,
                 Err(e) => {

@@ -112,20 +112,28 @@ impl StorageService for StorageServer {
         }
         let real_key = get_real_key_by_u32(region, &key);
 
-        if region == Regions::AllBlockData as u32 {
-            match self.storager.store_all_block_data(&key, &value).await {
+        match Regions::from_i32(region as i32).unwrap() {
+            Regions::AllBlockData => match self.storager.store_all_block_data(&key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => {
                     let height = u64_decode(&key);
                     warn!("store block({}) failed: {}", height, status.to_string());
                     Ok(Response::new(status.into()))
                 }
+            },
+            Regions::TransactionsPool => {
+                match self.storager.store_transactions_pool(&value).await {
+                    Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
+                    Err(status) => {
+                        warn!("store transactions failed: {}", status.to_string());
+                        Ok(Response::new(status.into()))
+                    }
+                }
             }
-        } else {
-            match self.storager.store(&real_key, &value).await {
+            _ => match self.storager.store(&real_key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => Ok(Response::new(status.into())),
-            }
+            },
         }
     }
 
@@ -152,8 +160,8 @@ impl StorageService for StorageServer {
         }
         let real_key = get_real_key_by_u32(region, &key);
 
-        if region == Regions::FullBlock as u32 {
-            match self.storager.load_full_block(&key).await {
+        match Regions::from_i32(region as i32).unwrap() {
+            Regions::FullBlock => match self.storager.load_full_block(&key).await {
                 Ok(value) => Ok(Response::new(Value {
                     status: Some(StatusCodeEnum::Success.into()),
                     value,
@@ -166,36 +174,49 @@ impl StorageService for StorageServer {
                         value: vec![],
                     }))
                 }
-            }
-        } else if key == 1u64.to_be_bytes().to_vec() && region == Regions::Global as u32 {
-            let height_real_key = get_real_key_by_u32(region, &0u64.to_be_bytes());
-            match self.storager.load(&height_real_key, true).await {
-                Ok(height) => {
-                    let hash_real_key = get_real_key(Regions::BlockHash, &height);
-                    match self.storager.load(&hash_real_key, true).await {
-                        Ok(value) => Ok(Response::new(Value {
-                            status: Some(StatusCodeEnum::Success.into()),
-                            value,
-                        })),
-                        Err(status) => {
-                            warn!("load failed: {}", status.to_string());
-                            Ok(Response::new(Value {
-                                status: Some(status.into()),
-                                value: vec![],
-                            }))
-                        }
-                    }
-                }
+            },
+            Regions::TransactionsPool => match self.storager.reload_transactions_pool().await {
+                Ok(value) => Ok(Response::new(Value {
+                    status: Some(StatusCodeEnum::Success.into()),
+                    value,
+                })),
                 Err(status) => {
-                    warn!("load failed: {}", status.to_string());
+                    warn!("load transactions failed: {}", status.to_string());
                     Ok(Response::new(Value {
                         status: Some(status.into()),
                         value: vec![],
                     }))
                 }
+            },
+            Regions::Global if key == 1u64.to_be_bytes().to_vec() => {
+                let height_real_key = get_real_key_by_u32(region, &0u64.to_be_bytes());
+                match self.storager.load(&height_real_key, true).await {
+                    Ok(height) => {
+                        let hash_real_key = get_real_key(Regions::BlockHash, &height);
+                        match self.storager.load(&hash_real_key, true).await {
+                            Ok(value) => Ok(Response::new(Value {
+                                status: Some(StatusCodeEnum::Success.into()),
+                                value,
+                            })),
+                            Err(status) => {
+                                warn!("load failed: {}", status.to_string());
+                                Ok(Response::new(Value {
+                                    status: Some(status.into()),
+                                    value: vec![],
+                                }))
+                            }
+                        }
+                    }
+                    Err(status) => {
+                        warn!("load failed: {}", status.to_string());
+                        Ok(Response::new(Value {
+                            status: Some(status.into()),
+                            value: vec![],
+                        }))
+                    }
+                }
             }
-        } else {
-            match self.storager.load(&real_key, true).await {
+            _ => match self.storager.load(&real_key, true).await {
                 Ok(value) => Ok(Response::new(Value {
                     status: Some(StatusCodeEnum::Success.into()),
                     value,
@@ -204,7 +225,7 @@ impl StorageService for StorageServer {
                     status: Some(status.into()),
                     value: vec![],
                 })),
-            }
+            },
         }
     }
 
