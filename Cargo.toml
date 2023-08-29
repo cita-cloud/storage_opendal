@@ -1,6 +1,6 @@
 [package]
 name = "storage"
-version = "6.7.1"
+version = "6.7.2-beta.1"
 authors = ["Rivtower Technologies <contact@rivtower.com>"]
 license = "Apache-2.0"
 edition = "2021"
@@ -21,8 +21,8 @@ opendal = { version = "0.40", features = ["services-rocksdb", "services-moka"] }
 # opendal disable the default-features of rocksdb, we need to enable it manually
 rocksdb = "0.21"
 
-cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
-cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
+cloud-util = "0.8.0-beta.1"
+cita_cloud_proto = "=6.7.2-beta.1"
 
 [[bin]]
 name = "bench"
