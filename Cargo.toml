@@ -20,7 +20,7 @@ rand = "0.8"
 opendal = { features = [
     "services-rocksdb",
     "services-moka",
-], git = "https://github.com/apache/incubator-opendal" }
+], git = "https://github.com/apache/incubator-opendal", rev = "c532a9e" }
 
 cloud-util = "0.8.0-beta.1"
 cita_cloud_proto = "=6.7.2-beta.1"
