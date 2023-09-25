@@ -17,15 +17,12 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "0.39", features = [
-    "services-rocksdb",
-    "services-moka",
-], git = "https://github.com/apache/incubator-opendal" }
+opendal = { version = "0.40", features = ["services-rocksdb", "services-moka"] }
+# opendal disable the default-features of rocksdb, we need to enable it manually
+rocksdb = "0.21"
 
 cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
 cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
-# opendal disable the default-features of rocksdb, we need to enable it manually
-rocksdb = "0.21"
 
 [[bin]]
 name = "bench"
