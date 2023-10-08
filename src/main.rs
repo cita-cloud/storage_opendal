@@ -112,7 +112,7 @@ impl StorageService for StorageServer {
         }
         let real_key = get_real_key_by_u32(region, &key);
 
-        match Regions::from_i32(region as i32).unwrap() {
+        match Regions::try_from(region as i32).unwrap() {
             Regions::AllBlockData => match self.storager.store_all_block_data(&key, &value).await {
                 Ok(()) => Ok(Response::new(StatusCodeEnum::Success.into())),
                 Err(status) => {
@@ -160,7 +160,7 @@ impl StorageService for StorageServer {
         }
         let real_key = get_real_key_by_u32(region, &key);
 
-        match Regions::from_i32(region as i32).unwrap() {
+        match Regions::try_from(region as i32).unwrap() {
             Regions::FullBlock => match self.storager.load_full_block(&key).await {
                 Ok(value) => Ok(Response::new(Value {
                     status: Some(StatusCodeEnum::Success.into()),
