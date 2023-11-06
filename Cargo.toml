@@ -21,8 +21,8 @@ opendal = { version = "0.40", features = ["services-rocksdb", "services-moka"] }
 # opendal disable the default-features of rocksdb, we need to enable it manually
 rocksdb = "0.21"
 
-cloud-util = "=0.8.0-beta.3"
-cita_cloud_proto = "=6.7.2-beta.3"
+cloud-util = { package = "cloud-util", git = "https://github.com/cita-cloud/cloud-common-rs" }
+cita_cloud_proto = { package = "cita_cloud_proto", git = "https://github.com/cita-cloud/cloud-common-rs" }
 
 [[bin]]
 name = "bench"
