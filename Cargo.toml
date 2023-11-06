@@ -1,6 +1,6 @@
 [package]
 name = "storage"
-version = "6.7.1"
+version = "6.7.2-beta.3"
 authors = ["Rivtower Technologies <contact@rivtower.com>"]
 license = "Apache-2.0"
 edition = "2021"
