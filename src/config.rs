@@ -25,6 +25,7 @@ pub struct CloudStorage {
     pub endpoint: String,
     pub bucket: String, // as Azblob container
     pub root: String,
+    pub region: String, // only for aws s3
 }
 
 impl CloudStorage {
@@ -35,6 +36,7 @@ impl CloudStorage {
             && self.endpoint.is_empty()
             && self.bucket.is_empty()
             && self.root.is_empty()
+            && self.region.is_empty()
     }
 }
 

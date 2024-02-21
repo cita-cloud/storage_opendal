@@ -11,7 +11,7 @@ docker build -t citacloud/storage_opendal .
 
 ```
 $ storage -h
-storage 6.7.0
+storage 6.7.2
 Rivtower Technologies <contact@rivtower.com>
 
 Usage: storage <COMMAND>
@@ -60,10 +60,13 @@ Options:
     * `agent_endpoint` jaeger 采集端地址
 
     其中`[storage_opendal.cloud_storage]`段为第三层S3云存储服务的配置，如不配置则不开启第三层：
+    * `service_type` 服务类型，目前支持s3/oss(aliyun)/obs(huawei)/cos(tencent)/azblob(azure)
     * `endpoint` 为S3服务的地址
     * `access_key_id` 为S3服务的access_key_id
     * `secret_access_key` 为S3服务的secret_access_key
     * `bucket` 为S3服务的bucket名称
+    * `root` 为要使用的根目录
+    * `region` 为S3服务所在的区域（一般不需要配置，系统会自动检测）
 
 ```
 $ storage run -c example/config.toml

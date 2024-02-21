@@ -2,8 +2,8 @@
 storage_port = 60003
 domain = "test-chain-node1"
 enable_metrics = false
-l1_capacity = 10
-l2_capacity = 20
+l1_capacity = 100
+l2_capacity = 2000
 
 [storage_opendal.log_config]
 max_level = "info"
@@ -18,3 +18,5 @@ service_name = "storage"
 # bucket = "opendal"
 # endpoint = "http://192.168.10.122:30289"
 # secret_access_key = "rkaYah8Wnb1YGrFhMfpp3K43n8ABglGlcn3TUpxq"
+# root = "subdir"
+# region = "cn-east-3"
