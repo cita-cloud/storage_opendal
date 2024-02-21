@@ -17,7 +17,7 @@ tower = "0.4"
 tracing = "0.1"
 async-recursion = "1.0"
 rand = "0.8"
-opendal = { version = "0.40", features = ["services-rocksdb", "services-moka"] }
+opendal = { version = "0.45", features = ["services-rocksdb", "services-moka"] }
 # opendal disable the default-features of rocksdb, we need to enable it manually
 rocksdb = "0.21"
 

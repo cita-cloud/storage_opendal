@@ -111,6 +111,9 @@ impl Storager {
                     s3_builder.endpoint(l3config.endpoint.as_str());
                     s3_builder.bucket(l3config.bucket.as_str());
                     s3_builder.root(l3config.root.as_str());
+                    if !l3config.region.is_empty() {
+                        s3_builder.region(l3config.region.as_str());
+                    }
                     Storager::build_one(s3_builder, None, None, 3).await
                 }
                 "azblob" => {

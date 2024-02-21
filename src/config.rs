@@ -25,6 +25,7 @@ pub struct CloudStorage {
     pub endpoint: String,
     pub bucket: String, // as Azblob container
     pub root: String,
+    pub region: String, // only for aws s3
 }
 
 impl CloudStorage {
@@ -35,6 +36,7 @@ impl CloudStorage {
             && self.endpoint.is_empty()
             && self.bucket.is_empty()
             && self.root.is_empty()
+            && self.region.is_empty()
     }
 }
 
@@ -97,7 +99,7 @@ mod tests {
 
         assert_eq!(config.storage_port, 60003);
         assert_eq!(config.domain, "test-chain-node1");
-        assert_eq!(config.l1_capacity, 10);
-        assert_eq!(config.l2_capacity, 20);
+        assert_eq!(config.l1_capacity, 100);
+        assert_eq!(config.l2_capacity, 2000);
     }
 }
