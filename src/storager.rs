@@ -14,7 +14,10 @@
 
 use crate::{
     config::CloudStorage,
-    util::{check_layer3_availability, full_to_compact, get_raw_key, get_real_key, u64_decode},
+    util::{
+        check_layer3_availability, full_to_compact, get_raw_key, get_real_key, u32_decode,
+        u64_decode,
+    },
 };
 use async_recursion::async_recursion;
 use cita_cloud_proto::{
@@ -661,7 +664,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
     let capacity = local.capacity.unwrap();
     let remote = local.next_storager.as_ref().unwrap();
     let local_height_real_key = get_real_key(Regions::Global, &0u64.to_be_bytes());
-    let remote_height_real_key = get_real_key(Regions::Global, &1u64.to_be_bytes());
+    let remote_height_index_real_key = get_real_key(Regions::Global, &1u64.to_be_bytes());
     let delete_real_key = get_real_key(Regions::Global, &2u64.to_be_bytes());
 
     let min_interval = backup_interval_secs * 2 / 3;
@@ -675,14 +678,21 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         tokio::time::sleep(Duration::from_secs(backup_interval)).await;
 
         // avoid concurrent backup
-        let mut remote_height = match remote.load(&remote_height_real_key, false).await {
-            Ok(value) => u64_decode(&value),
+        let (mut remote_height, mut remote_index) = match remote
+            .load(&remote_height_index_real_key, false)
+            .await
+        {
+            Ok(value) => {
+                let height = u64_decode(&value[..8]);
+                let index = u32_decode(&value[8..]);
+                (height, index)
+            }
             Err(e) => {
                 if e == StatusCodeEnum::NotFound {
-                    0
+                    (0, 0)
                 } else {
                     warn!(
-                        "backup failed: load remote height failed: {}. layer: {}, scheme: {}. skip this round",
+                        "backup failed: load remote height and index failed: {}. layer: {}, scheme: {}. skip this round",
                         e.to_string(),
                         remote.layer,
                         remote.scheme
@@ -693,26 +703,34 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
         };
         loop {
             tokio::time::sleep(Duration::from_secs(retreat_interval_secs)).await;
-            let new_remote_height = match remote.load(&remote_height_real_key, false).await {
-                Ok(value) => u64_decode(&value),
+            let (new_remote_height, new_remote_index) = match remote
+                .load(&remote_height_index_real_key, false)
+                .await
+            {
+                Ok(value) => {
+                    let height = u64_decode(&value[..8]);
+                    let index = u32_decode(&value[8..]);
+                    (height, index)
+                }
                 Err(e) => {
                     if e == StatusCodeEnum::NotFound {
-                        0
+                        (0, 0)
                     } else {
                         warn!(
-                            "backup failed: load remote height failed: {}. layer: {}, scheme: {}. skip this round",
+                            "backup failed: load remote height and index failed: {}. layer: {}, scheme: {}. skip this round",
                             e.to_string(),
                             remote.layer,
                             remote.scheme
                         );
-                        continue 'backup_round;
+                        continue;
                     }
                 }
             };
-            if remote_height == new_remote_height {
+            if remote_height == new_remote_height && remote_index == new_remote_index {
                 break;
             } else {
                 remote_height = new_remote_height;
+                remote_index = new_remote_index;
                 warn!("backup retreat");
             }
         }
@@ -742,8 +760,14 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             remote_height + 1
         };
         info!(
-            "backup {} - {}: layer{}: {} to layer{}: {}",
-            backup_start, remote_target, local.layer, local.scheme, remote.layer, remote.scheme
+            "backup {}.{} - {}: layer{}: {} to layer{}: {}",
+            backup_start,
+            remote_index,
+            remote_target,
+            local.layer,
+            local.scheme,
+            remote.layer,
+            remote.scheme
         );
         for height in backup_start..=remote_target {
             let real_keys = match local.collect_keys(height, false).await {
@@ -760,75 +784,70 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                 }
             };
 
-            for real_key in real_keys {
-                match remote.operator.is_exist(&real_key).await {
-                    Ok(true) => {
-                        info!(
-                            "backup({}) skip: key exists: {}. layer: {}, scheme: {}",
-                            height, real_key, remote.layer, remote.scheme
-                        );
-                        continue;
-                    }
-                    Ok(false) => {}
-                    Err(e) => {
-                        warn!(
-                            "backup({}) failed: check key exists failed: {}. layer: {}, scheme: {}. skip this round",
-                            height,
-                            e.to_string(),
-                            remote.layer,
-                            remote.scheme
-                        );
-                        continue 'backup_round;
-                    }
+            for (i, real_key) in real_keys.iter().enumerate() {
+                if height == backup_start && i < remote_index as usize {
+                    continue;
                 }
-                let value = match local.load(&real_key, false).await {
+                let value = match local.load(real_key, false).await {
                     Ok(value) => value,
                     Err(e) => {
-                        let (region, key) = get_raw_key(&real_key);
+                        let (region, key) = get_raw_key(real_key);
                         warn!(
-                                    "backup({}) failed: load failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
-                                    height,
-                                    e.to_string(),
-                                    region,
-                                    key,
-                                    local.layer,
-                                    local.scheme
-                                );
+                            "backup({} {}/{}) failed: load failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            i,
+                            real_keys.len(),
+                            e.to_string(),
+                            region,
+                            key,
+                            local.layer,
+                            local.scheme
+                        );
                         continue 'backup_round;
                     }
                 };
-                if let Err(e) = remote.store(&real_key, &value).await {
-                    let (region, key) = get_raw_key(&real_key);
+                if let Err(e) = remote.store(real_key, &value).await {
+                    let (region, key) = get_raw_key(real_key);
                     warn!(
-                                    "backup({}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
-                                    height,
-                                    e.to_string(),
-                                    region,
-                                    key,
-                                    remote.layer,
-                                    remote.scheme
-                                );
+                        "backup({} {}/{}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        i,
+                        real_keys.len(),
+                        e.to_string(),
+                        region,
+                        key,
+                        remote.layer,
+                        remote.scheme
+                    );
                     continue 'backup_round;
                 }
-            }
-
-            if let Err(e) = remote
-                .store(&remote_height_real_key, &height.to_be_bytes())
-                .await
-            {
-                warn!(
-                    "backup({}) failed: update backup height failed: {}. layer: {}, scheme: {}. skip this round",
+                let mut buf = Vec::new();
+                buf.extend_from_slice(&height.to_be_bytes());
+                buf.extend_from_slice(&(i as u32).to_be_bytes());
+                if let Err(e) = remote
+                    .store(&remote_height_index_real_key, buf.as_slice())
+                    .await
+                {
+                    warn!(
+                        "backup({} {}/{}) failed: update backup height and index failed: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        i,
+                        real_keys.len(),
+                        e.to_string(),
+                        remote.layer,
+                        remote.scheme
+                    );
+                    continue 'backup_round;
+                }
+                info!(
+                    "backup({} {}/{}) succeed: layer: {}, scheme: {}",
                     height,
-                    e.to_string(),
+                    i,
+                    real_keys.len(),
                     remote.layer,
                     remote.scheme
                 );
-                continue 'backup_round;
             }
-            info!(
-                "backup({}) succeed: layer: {}, scheme: {}",
-                height, remote.layer, remote.scheme
-            );
         }
 
         // delete outdate
