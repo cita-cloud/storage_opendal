@@ -761,6 +761,26 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             };
 
             for real_key in real_keys {
+                match remote.operator.is_exist(&real_key).await {
+                    Ok(true) => {
+                        info!(
+                            "backup({}) skip: key exists: {}. layer: {}, scheme: {}",
+                            height, real_key, remote.layer, remote.scheme
+                        );
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        warn!(
+                            "backup({}) failed: check key exists failed: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            e.to_string(),
+                            remote.layer,
+                            remote.scheme
+                        );
+                        continue 'backup_round;
+                    }
+                }
                 let value = match local.load(&real_key, false).await {
                     Ok(value) => value,
                     Err(e) => {
