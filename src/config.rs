@@ -77,7 +77,7 @@ impl Default for StorageConfig {
             l1_capacity: 200,
             l2_capacity: 90000,
             backup_interval: 300,
-            retreat_interval: 5,
+            retreat_interval: 150,
             cloud_storage: Default::default(),
         }
     }
@@ -99,7 +99,7 @@ mod tests {
 
         assert_eq!(config.storage_port, 60003);
         assert_eq!(config.domain, "test-chain-node1");
-        assert_eq!(config.l1_capacity, 100);
-        assert_eq!(config.l2_capacity, 2000);
+        assert_eq!(config.l1_capacity, 200);
+        assert_eq!(config.l2_capacity, 90000);
     }
 }

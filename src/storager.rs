@@ -759,17 +759,13 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                     continue 'backup_round;
                 }
             };
-            let mut handles = vec![];
+
             for real_key in real_keys {
-                let local = local.clone();
-                let remote = remote.clone();
-                let handle = tokio::spawn({
-                    async move {
-                        let value = match local.load(&real_key, false).await {
-                            Ok(value) => value,
-                            Err(e) => {
-                                let (region, key) = get_raw_key(&real_key);
-                                warn!(
+                let value = match local.load(&real_key, false).await {
+                    Ok(value) => value,
+                    Err(e) => {
+                        let (region, key) = get_raw_key(&real_key);
+                        warn!(
                                     "backup({}) failed: load failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
                                     height,
                                     e.to_string(),
@@ -778,12 +774,12 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                                     local.layer,
                                     local.scheme
                                 );
-                                return false;
-                            }
-                        };
-                        if let Err(e) = remote.store(&real_key, &value).await {
-                            let (region, key) = get_raw_key(&real_key);
-                            warn!(
+                        continue 'backup_round;
+                    }
+                };
+                if let Err(e) = remote.store(&real_key, &value).await {
+                    let (region, key) = get_raw_key(&real_key);
+                    warn!(
                                     "backup({}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
                                     height,
                                     e.to_string(),
@@ -792,20 +788,10 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                                     remote.layer,
                                     remote.scheme
                                 );
-                            false
-                        } else {
-                            true
-                        }
-                    }
-                });
-                handles.push(handle);
-            }
-            // update backup height
-            for handle in handles {
-                if !handle.await.unwrap() {
                     continue 'backup_round;
                 }
             }
+
             if let Err(e) = remote
                 .store(&remote_height_real_key, &height.to_be_bytes())
                 .await
