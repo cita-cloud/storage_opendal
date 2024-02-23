@@ -753,15 +753,10 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             info!("remote is up to date. skip this round");
             continue;
         }
-        // for storing genesis block
-        let backup_start = if remote_height == 0 {
-            0
-        } else {
-            remote_height + 1
-        };
+
         info!(
             "backup {}.{} - {}: layer{}: {} to layer{}: {}",
-            backup_start,
+            remote_height,
             remote_index,
             remote_target,
             local.layer,
@@ -769,7 +764,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             remote.layer,
             remote.scheme
         );
-        for height in backup_start..=remote_target {
+        for height in remote_height..=remote_target {
             let real_keys = match local.collect_keys(height, false).await {
                 Ok(keys) => keys,
                 Err(e) => {
@@ -785,7 +780,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             };
 
             for (i, real_key) in real_keys.iter().enumerate() {
-                if height == backup_start && i < remote_index as usize {
+                if height == remote_height && i <= remote_index as usize {
                     continue;
                 }
                 let value = match local.load(real_key, false).await {
@@ -796,7 +791,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                             "backup({} {}/{}) failed: load failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
                             height,
                             i,
-                            real_keys.len(),
+                            real_keys.len() - 1,
                             e.to_string(),
                             region,
                             key,
@@ -812,7 +807,7 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                         "backup({} {}/{}) failed: store failed: {}. region: {}, key: {}. layer: {}, scheme: {}. skip this round",
                         height,
                         i,
-                        real_keys.len(),
+                        real_keys.len() - 1,
                         e.to_string(),
                         region,
                         key,
@@ -821,32 +816,34 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                     );
                     continue 'backup_round;
                 }
-                let mut buf = Vec::new();
-                buf.extend_from_slice(&height.to_be_bytes());
-                buf.extend_from_slice(&(i as u32).to_be_bytes());
-                if let Err(e) = remote
-                    .store(&remote_height_index_real_key, buf.as_slice())
-                    .await
-                {
-                    warn!(
-                        "backup({} {}/{}) failed: update backup height and index failed: {}. layer: {}, scheme: {}. skip this round",
+                if (i % 100 == 0 && i != 0) || i == real_keys.len() - 1 {
+                    let mut buf = Vec::new();
+                    buf.extend_from_slice(&height.to_be_bytes());
+                    buf.extend_from_slice(&(i as u32).to_be_bytes());
+                    if let Err(e) = remote
+                        .store(&remote_height_index_real_key, buf.as_slice())
+                        .await
+                    {
+                        warn!(
+                            "backup({} {}/{}) failed: update backup height and index failed: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            i,
+                            real_keys.len() - 1,
+                            e.to_string(),
+                            remote.layer,
+                            remote.scheme
+                        );
+                        continue 'backup_round;
+                    }
+                    info!(
+                        "backup({} {}/{}) succeed: layer: {}, scheme: {}",
                         height,
                         i,
-                        real_keys.len(),
-                        e.to_string(),
+                        real_keys.len() - 1,
                         remote.layer,
                         remote.scheme
                     );
-                    continue 'backup_round;
                 }
-                info!(
-                    "backup({} {}/{}) succeed: layer: {}, scheme: {}",
-                    height,
-                    i,
-                    real_keys.len(),
-                    remote.layer,
-                    remote.scheme
-                );
             }
         }
 
