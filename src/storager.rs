@@ -683,6 +683,14 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
             .await
         {
             Ok(value) => {
+                if value.len() != 12 {
+                    warn!(
+                        "backup failed: load remote height and index failed: invalid length. layer: {}, scheme: {}. skip this round",
+                        remote.layer,
+                        remote.scheme
+                    );
+                    continue;
+                }
                 let height = u64_decode(&value[..8]);
                 let index = u32_decode(&value[8..]);
                 (height, index)
@@ -708,6 +716,14 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
                 .await
             {
                 Ok(value) => {
+                    if value.len() != 12 {
+                        warn!(
+                            "backup failed: load remote height and index failed: invalid length. layer: {}, scheme: {}. skip this round",
+                            remote.layer,
+                            remote.scheme
+                        );
+                        continue;
+                    }
                     let height = u64_decode(&value[..8]);
                     let index = u32_decode(&value[8..]);
                     (height, index)
