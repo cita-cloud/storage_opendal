@@ -1,15 +1,15 @@
 [package]
 name = "storage"
-version = "6.7.2"
+version = "6.7.3"
 authors = ["Rivtower Technologies <contact@rivtower.com>"]
 license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-tonic = "0.10"
+clap = { version = "4.5", features = ["derive"] }
+tonic = "0.11"
 prost = "0.12"
-tokio = { version = "1.32", features = ["full"] }
+tokio = { version = "1.36", features = ["full"] }
 hex = "0.4"
 serde = "1.0"
 serde_derive = "1.0"
@@ -29,7 +29,7 @@ name = "bench"
 path = "benches/main.rs"
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = "3.10"
 quickcheck = "1.0"
 
 [profile.release.package."*"]
