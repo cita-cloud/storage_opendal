@@ -68,6 +68,10 @@ Options:
     * `root` 为要使用的根目录
     * `region` 为S3服务所在的区域（一般不需要配置，系统会自动检测）
 
+    其中`[storage_opendal.exporter]`段为导出到kafka的配置，如不配置则不开启导出功能：
+    * `base_path` kafka-bridge的base url
+    * `chain_name` topic的前缀为citacloud.{chanin_name}
+
 ```
 $ storage run -c example/config.toml
 2023-03-29T17:25:16.300670392+08:00  INFO storage: storage grpc port: 60003

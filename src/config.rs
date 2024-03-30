@@ -16,9 +16,11 @@ use cloud_util::{common::read_toml, tracer::LogConfig};
 use serde::Serialize;
 use serde_derive::Deserialize;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CloudStorage {
+    pub backup_interval: u64,
+    pub retreat_interval: u64,
     pub service_type: String,
     pub access_key_id: String, //as Cos secret_id, as Azblob account_name
     pub secret_access_key: String, // as Cos secret_key, as Azblob account_key
@@ -26,6 +28,22 @@ pub struct CloudStorage {
     pub bucket: String, // as Azblob container
     pub root: String,
     pub region: String, // only for aws s3
+}
+
+impl Default for CloudStorage {
+    fn default() -> Self {
+        Self {
+            backup_interval: 300,
+            retreat_interval: 150,
+            service_type: String::new(),
+            access_key_id: String::new(),
+            secret_access_key: String::new(),
+            endpoint: String::new(),
+            bucket: String::new(),
+            root: String::new(),
+            region: String::new(),
+        }
+    }
 }
 
 impl CloudStorage {
@@ -37,6 +55,35 @@ impl CloudStorage {
             && self.bucket.is_empty()
             && self.root.is_empty()
             && self.region.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExportConfig {
+    pub base_path: String, // kafka bridge base path
+    pub chain_name: String,
+    pub executor_port: u16,
+    pub controller_port: u16,
+    pub export_interval: u64,
+}
+
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self {
+            base_path: String::new(),
+            chain_name: String::new(),
+            controller_port: 50004,
+            executor_port: 50002,
+            export_interval: 10,
+        }
+    }
+}
+
+impl ExportConfig {
+    pub fn is_empty(&self) -> bool {
+        // only detect base_path because chain_name always set in cloud-config
+        self.base_path.is_empty()
     }
 }
 
@@ -56,10 +103,8 @@ pub struct StorageConfig {
     pub l1_capacity: u64,
     // invalid if cloud_storage is empty
     pub l2_capacity: u64,
-    // invalid if cloud_storage is empty
-    pub backup_interval: u64,
-    pub retreat_interval: u64,
     pub cloud_storage: CloudStorage,
+    pub exporter: ExportConfig,
 }
 
 impl Default for StorageConfig {
@@ -76,9 +121,8 @@ impl Default for StorageConfig {
             domain: Default::default(),
             l1_capacity: 200,
             l2_capacity: 90000,
-            backup_interval: 300,
-            retreat_interval: 150,
             cloud_storage: Default::default(),
+            exporter: Default::default(),
         }
     }
 }
@@ -97,9 +141,18 @@ mod tests {
     fn basic_test() {
         let config = StorageConfig::new("example/config.toml");
 
-        assert_eq!(config.storage_port, 60003);
+        assert_eq!(config.storage_port, 50003);
         assert_eq!(config.domain, "test-chain-node1");
         assert_eq!(config.l1_capacity, 200);
         assert_eq!(config.l2_capacity, 90000);
+
+        /*
+        assert_eq!(config.cloud_storage.region, "cn-east-3");
+        assert_eq!(config.cloud_storage.backup_interval, 300);
+
+        assert_eq!(config.exporter.chain_name, "test-chain");
+        assert_eq!(config.exporter.executor_port, 50002);
+        assert_eq!(config.exporter.export_interval, 10);
+        */
     }
 }

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod config;
+mod exporter;
 mod health_check;
 mod storager;
 mod util;
@@ -281,10 +282,9 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
         Storager::build(
             &config.data_root,
             &config.cloud_storage,
+            &config.exporter,
             config.l1_capacity,
             config.l2_capacity,
-            config.backup_interval,
-            config.retreat_interval,
         )
         .await,
     );

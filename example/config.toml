@@ -1,5 +1,5 @@
 [storage_opendal]
-storage_port = 60003
+storage_port = 50003
 domain = "test-chain-node1"
 enable_metrics = false
 l1_capacity = 200
@@ -20,3 +20,7 @@ service_name = "storage"
 # secret_access_key = "rkaYah8Wnb1YGrFhMfpp3K43n8ABglGlcn3TUpxq"
 # root = "subdir"
 # region = "cn-east-3"
+
+[storage_opendal.exporter]
+# base_path = "http://my-bridge-bridge-service.kafka.svc.cluster.local:8080"
+# chain_name = "test-chain"

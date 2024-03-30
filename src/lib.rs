@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub mod config;
+pub mod exporter;
 pub mod storager;
 pub mod util;
 
