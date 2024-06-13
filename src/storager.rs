@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use crate::{
-    config::CloudStorage,
+    config::{CloudStorage, ExportConfig},
+    exporter::Exporter,
     util::{
         check_layer3_availability, full_to_compact, get_raw_key, get_real_key, u32_decode,
         u64_decode,
@@ -70,10 +71,9 @@ impl Storager {
     pub async fn build(
         data_root: &str,
         l3config: &CloudStorage,
+        exporter_config: &ExportConfig,
         l1_capacity: u64,
         l2_capacity: u64,
-        backup_interval: u64,
-        retreat_interval: u64,
     ) -> Self {
         // if l3config is empty, storager3 is None
         let storager3 = if l3config.is_empty() {
@@ -148,12 +148,23 @@ impl Storager {
             )
             .await;
             let storager2_for_backup = storager2.clone();
+            let backup_interval = l3config.backup_interval;
+            let retreat_interval = l3config.retreat_interval;
             tokio::spawn(async move {
                 backup(storager2_for_backup, backup_interval, retreat_interval).await
             });
             storager2
         } else {
-            Storager::build_one(layer2_builder, None, None, 2).await
+            let storager2 = Storager::build_one(layer2_builder, None, Some(l2_capacity), 2).await;
+            // conflict between exporter and storager3
+            // start task for export data to kafka
+            if !exporter_config.is_empty() {
+                info!("build exporter: {:?}", exporter_config);
+                let storager2_for_export = storager2.clone();
+                let exporter_config = exporter_config.clone();
+                tokio::spawn(async move { export(storager2_for_export, exporter_config).await });
+            }
+            storager2
         };
         info!(
             "build storager: layer: {}, scheme: {}",
@@ -925,6 +936,127 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
     }
 }
 
+async fn export(local: Storager, exporter_config: ExportConfig) {
+    // build exporter
+    let exporter = Exporter::new(&exporter_config);
+
+    let capacity = local.capacity.unwrap();
+
+    let local_height_real_key = get_real_key(Regions::Global, &0u64.to_be_bytes());
+
+    let delete_real_key = get_real_key(Regions::Global, &2u64.to_be_bytes());
+
+    let min_interval = exporter_config.export_interval * 2 / 3;
+    let max_interval = exporter_config.export_interval * 4 / 3;
+
+    let mut old_remote_offset = exporter.read_remote_progress_with_retry().await;
+    'export_round: loop {
+        // random backoff
+        let export_interval = {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(min_interval..=max_interval)
+        };
+        tokio::time::sleep(Duration::from_secs(export_interval)).await;
+
+        let remote_offset = exporter.read_remote_progress_with_retry().await;
+        if remote_offset != old_remote_offset {
+            old_remote_offset = remote_offset;
+            warn!("export backoff");
+            continue;
+        }
+
+        // export
+        let remote_height = remote_offset.0;
+        let local_height = match local.load(&local_height_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                warn!(
+                    "export failed: load local height failed: {}. layer: {}, scheme: {}. skip this round",
+                    e.to_string(),
+                    local.layer,
+                    local.scheme
+                );
+                continue;
+            }
+        };
+        let remote_target = local_height - 1;
+        if remote_height >= remote_target {
+            info!("remote is up to date. skip this round");
+            continue;
+        }
+
+        info!("export {} - {}", remote_height, remote_target,);
+        for height in remote_height + 1..=remote_target {
+            // export each block
+            if exporter.export(&local, height).await.is_err() {
+                warn!("export({}) failed: export failed.", height);
+                continue 'export_round;
+            }
+            info!("exported {}", height);
+        }
+
+        // delete outdate
+        let delete_height = match local.load(&delete_real_key, false).await {
+            Ok(value) => u64_decode(&value),
+            Err(e) => {
+                if e == StatusCodeEnum::NotFound {
+                    0
+                } else {
+                    warn!(
+                        "backup failed: load delete height failed: {}. layer: {}, scheme: {}. skip this round",
+                        e.to_string(),
+                        local.layer,
+                        local.scheme
+                    );
+                    continue;
+                }
+            }
+        };
+        if local_height - delete_height > capacity {
+            info!(
+                "delete outdate {} - {}: layer: {}, scheme: {}",
+                delete_height + 1,
+                local_height - capacity,
+                local.layer,
+                local.scheme
+            );
+            for height in delete_height + 1..=local_height - capacity {
+                if let Err(e) = local.delete_outdate(height).await {
+                    if e != StatusCodeEnum::NotFound {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                        continue 'export_round;
+                    } else {
+                        warn!(
+                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. already deleted",
+                            height,
+                            e.to_string(),
+                            local.layer,
+                            local.scheme
+                        );
+                    }
+                }
+                // update delete height
+                if let Err(e) = local.store(&delete_real_key, &height.to_be_bytes()).await {
+                    warn!(
+                        "delete outdate({}) failed: update delete height failed: {}. layer: {}, scheme: {}. skip this round",
+                        height,
+                        e.to_string(),
+                        local.layer,
+                        local.scheme
+                    );
+                    continue 'export_round;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::util::get_real_key_by_u32;
@@ -995,7 +1127,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let storager = Storager::build(path, &CloudStorage::default(), 10, 20, 10, 3).await;
+                let storager = Storager::build(path, &CloudStorage::default(), &ExportConfig::default(), 10, 20).await;
                 storager.store(&real_key, &value).await.unwrap();
                 storager.load(&real_key, false).await.unwrap() == value
             })
