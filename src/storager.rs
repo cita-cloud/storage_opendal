@@ -281,7 +281,7 @@ impl Storager {
     #[async_recursion]
     pub async fn load(&self, real_key: &str, recursive: bool) -> Result<Vec<u8>, StatusCodeEnum> {
         match self.operator.read(real_key).await {
-            Ok(v) => Ok(v),
+            Ok(v) => Ok(v.to_vec()),
             Err(e) => match e.kind() {
                 ErrorKind::NotFound => {
                     // if recursive load, try to load from next layer
