@@ -10,7 +10,7 @@ max_level = "info"
 filter = "info"
 # rolling_file_path = "./logs"
 service_name = "storage"
-# agent_endpoint = "127.0.0.1:6831"
+# agent_endpoint = "localhost:6831"
 
 [storage_opendal.cloud_storage]
 # service_type = "s3"

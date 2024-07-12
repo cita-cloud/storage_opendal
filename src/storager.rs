@@ -155,16 +155,7 @@ impl Storager {
             });
             storager2
         } else {
-            let storager2 = Storager::build_one(layer2_builder, None, Some(l2_capacity), 2).await;
-            // conflict between exporter and storager3
-            // start task for export data to kafka
-            if !exporter_config.is_empty() {
-                info!("build exporter: {:?}", exporter_config);
-                let storager2_for_export = storager2.clone();
-                let exporter_config = exporter_config.clone();
-                tokio::spawn(async move { export(storager2_for_export, exporter_config).await });
-            }
-            storager2
+            Storager::build_one(layer2_builder, None, None, 2).await
         };
         info!(
             "build storager: layer: {}, scheme: {}",
@@ -183,6 +174,15 @@ impl Storager {
             "build storager: layer: {}, scheme: {}",
             storager1.layer, storager1.scheme
         );
+
+        // start task for export data to kafka
+        if !exporter_config.is_empty() {
+            info!("build exporter: {:?}", exporter_config);
+            let storager1_for_export = storager1.clone();
+            let exporter_config = exporter_config.clone();
+            tokio::spawn(async move { export(storager1_for_export, exporter_config).await });
+        }
+
         storager1
     }
 }
@@ -939,18 +939,13 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
 async fn export(local: Storager, exporter_config: ExportConfig) {
     // build exporter
     let exporter = Exporter::new(&exporter_config);
-
-    let capacity = local.capacity.unwrap();
-
     let local_height_real_key = get_real_key(Regions::Global, &0u64.to_be_bytes());
-
-    let delete_real_key = get_real_key(Regions::Global, &2u64.to_be_bytes());
 
     let min_interval = exporter_config.export_interval * 2 / 3;
     let max_interval = exporter_config.export_interval * 4 / 3;
 
     let mut old_remote_offset = exporter.read_remote_progress_with_retry().await;
-    'export_round: loop {
+    loop {
         // random backoff
         let export_interval = {
             let mut rng = rand::thread_rng();
@@ -966,7 +961,7 @@ async fn export(local: Storager, exporter_config: ExportConfig) {
         }
 
         // export
-        let remote_height = remote_offset.0;
+        let remote_height = remote_offset.0 + exporter_config.init_height;
         let local_height = match local.load(&local_height_real_key, false).await {
             Ok(value) => u64_decode(&value),
             Err(e) => {
@@ -990,69 +985,9 @@ async fn export(local: Storager, exporter_config: ExportConfig) {
             // export each block
             if exporter.export(&local, height).await.is_err() {
                 warn!("export({}) failed: export failed.", height);
-                continue 'export_round;
+                break;
             }
             info!("exported {}", height);
-        }
-
-        // delete outdate
-        let delete_height = match local.load(&delete_real_key, false).await {
-            Ok(value) => u64_decode(&value),
-            Err(e) => {
-                if e == StatusCodeEnum::NotFound {
-                    0
-                } else {
-                    warn!(
-                        "backup failed: load delete height failed: {}. layer: {}, scheme: {}. skip this round",
-                        e.to_string(),
-                        local.layer,
-                        local.scheme
-                    );
-                    continue;
-                }
-            }
-        };
-        if local_height - delete_height > capacity {
-            info!(
-                "delete outdate {} - {}: layer: {}, scheme: {}",
-                delete_height + 1,
-                local_height - capacity,
-                local.layer,
-                local.scheme
-            );
-            for height in delete_height + 1..=local_height - capacity {
-                if let Err(e) = local.delete_outdate(height).await {
-                    if e != StatusCodeEnum::NotFound {
-                        warn!(
-                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. skip this round",
-                            height,
-                            e.to_string(),
-                            local.layer,
-                            local.scheme
-                        );
-                        continue 'export_round;
-                    } else {
-                        warn!(
-                            "delete outdate({}) failed: {}. layer: {}, scheme: {}. already deleted",
-                            height,
-                            e.to_string(),
-                            local.layer,
-                            local.scheme
-                        );
-                    }
-                }
-                // update delete height
-                if let Err(e) = local.store(&delete_real_key, &height.to_be_bytes()).await {
-                    warn!(
-                        "delete outdate({}) failed: update delete height failed: {}. layer: {}, scheme: {}. skip this round",
-                        height,
-                        e.to_string(),
-                        local.layer,
-                        local.scheme
-                    );
-                    continue 'export_round;
-                }
-            }
         }
     }
 }

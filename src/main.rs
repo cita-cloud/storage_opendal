@@ -272,7 +272,7 @@ async fn run(opts: RunOpts) -> Result<(), StatusCodeEnum> {
     );
     info!("storager data root: {}", &config.data_root);
 
-    let addr_str = format!("127.0.0.1:{}", config.storage_port);
+    let addr_str = format!("[::]:{}", config.storage_port);
     let addr = addr_str.parse().map_err(|e: AddrParseError| {
         warn!("parse grpc listen address failed: {} ", e);
         StatusCodeEnum::FatalError
