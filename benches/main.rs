@@ -12,7 +12,7 @@ pub async fn store_data(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let client_options = ClientOptions::new(
         "bench".to_string(),
-        format!("http://127.0.0.1:{}", storage_port),
+        format!("http://localhost:{}", storage_port),
     );
     let client = match client_options.connect_storage() {
         Ok(retry_client) => retry_client,
@@ -32,7 +32,7 @@ pub async fn load_data(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let client_options = ClientOptions::new(
         "bench".to_string(),
-        format!("http://127.0.0.1:{}", storage_port),
+        format!("http://localhost:{}", storage_port),
     );
     let client = match client_options.connect_storage() {
         Ok(retry_client) => retry_client,
@@ -52,7 +52,7 @@ pub async fn delete_data(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let client_options = ClientOptions::new(
         "bench".to_string(),
-        format!("http://127.0.0.1:{}", storage_port),
+        format!("http://localhost:{}", storage_port),
     );
     let client = match client_options.connect_storage() {
         Ok(retry_client) => retry_client,

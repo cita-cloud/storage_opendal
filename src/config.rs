@@ -63,6 +63,7 @@ impl CloudStorage {
 pub struct ExportConfig {
     pub base_path: String, // kafka bridge base path
     pub chain_name: String,
+    pub init_height: u64,
     pub executor_port: u16,
     pub controller_port: u16,
     pub export_interval: u64,
@@ -73,6 +74,7 @@ impl Default for ExportConfig {
         Self {
             base_path: String::new(),
             chain_name: String::new(),
+            init_height: 0,
             controller_port: 50004,
             executor_port: 50002,
             export_interval: 10,
