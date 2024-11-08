@@ -81,51 +81,51 @@ impl Storager {
         } else {
             let storager3 = match l3config.service_type.as_str() {
                 "oss" => {
-                    let mut oss_builder = Oss::default();
-                    oss_builder.access_key_id(l3config.access_key_id.as_str());
-                    oss_builder.access_key_secret(l3config.secret_access_key.as_str());
-                    oss_builder.endpoint(l3config.endpoint.as_str());
-                    oss_builder.bucket(l3config.bucket.as_str());
-                    oss_builder.root(l3config.root.as_str());
+                    let oss_builder = Oss::default()
+                        .access_key_id(l3config.access_key_id.as_str())
+                        .access_key_secret(l3config.secret_access_key.as_str())
+                        .endpoint(l3config.endpoint.as_str())
+                        .bucket(l3config.bucket.as_str())
+                        .root(l3config.root.as_str());
                     Storager::build_one(oss_builder, None, None, 3).await
                 }
                 "obs" => {
-                    let mut obs_builder = Obs::default();
-                    obs_builder.access_key_id(l3config.access_key_id.as_str());
-                    obs_builder.secret_access_key(l3config.secret_access_key.as_str());
-                    obs_builder.endpoint(l3config.endpoint.as_str());
-                    obs_builder.bucket(l3config.bucket.as_str());
-                    obs_builder.root(l3config.root.as_str());
+                    let obs_builder = Obs::default()
+                        .access_key_id(l3config.access_key_id.as_str())
+                        .secret_access_key(l3config.secret_access_key.as_str())
+                        .endpoint(l3config.endpoint.as_str())
+                        .bucket(l3config.bucket.as_str())
+                        .root(l3config.root.as_str());
                     Storager::build_one(obs_builder, None, None, 3).await
                 }
                 "cos" => {
-                    let mut cos_builder = Cos::default();
-                    cos_builder.secret_id(l3config.access_key_id.as_str());
-                    cos_builder.secret_key(l3config.secret_access_key.as_str());
-                    cos_builder.endpoint(l3config.endpoint.as_str());
-                    cos_builder.bucket(l3config.bucket.as_str());
-                    cos_builder.root(l3config.root.as_str());
+                    let cos_builder = Cos::default()
+                        .secret_id(l3config.access_key_id.as_str())
+                        .secret_key(l3config.secret_access_key.as_str())
+                        .endpoint(l3config.endpoint.as_str())
+                        .bucket(l3config.bucket.as_str())
+                        .root(l3config.root.as_str());
                     Storager::build_one(cos_builder, None, None, 3).await
                 }
                 "s3" => {
-                    let mut s3_builder = S3::default();
-                    s3_builder.access_key_id(l3config.access_key_id.as_str());
-                    s3_builder.secret_access_key(l3config.secret_access_key.as_str());
-                    s3_builder.endpoint(l3config.endpoint.as_str());
-                    s3_builder.bucket(l3config.bucket.as_str());
-                    s3_builder.root(l3config.root.as_str());
+                    let mut s3_builder = S3::default()
+                        .access_key_id(l3config.access_key_id.as_str())
+                        .secret_access_key(l3config.secret_access_key.as_str())
+                        .endpoint(l3config.endpoint.as_str())
+                        .bucket(l3config.bucket.as_str())
+                        .root(l3config.root.as_str());
                     if !l3config.region.is_empty() {
-                        s3_builder.region(l3config.region.as_str());
+                        s3_builder = s3_builder.region(l3config.region.as_str());
                     }
                     Storager::build_one(s3_builder, None, None, 3).await
                 }
                 "azblob" => {
-                    let mut azblob_builder = Azblob::default();
-                    azblob_builder.account_name(l3config.access_key_id.as_str());
-                    azblob_builder.account_key(l3config.secret_access_key.as_str());
-                    azblob_builder.endpoint(l3config.endpoint.as_str());
-                    azblob_builder.container(l3config.bucket.as_str());
-                    azblob_builder.root(l3config.root.as_str());
+                    let azblob_builder = Azblob::default()
+                        .account_name(l3config.access_key_id.as_str())
+                        .account_key(l3config.secret_access_key.as_str())
+                        .endpoint(l3config.endpoint.as_str())
+                        .container(l3config.bucket.as_str())
+                        .root(l3config.root.as_str());
                     Storager::build_one(azblob_builder, None, None, 3).await
                 }
                 _ => unimplemented!(),
@@ -137,8 +137,7 @@ impl Storager {
             Some(storager3)
         };
 
-        let mut layer2_builder = opendal::services::Rocksdb::default();
-        layer2_builder.datadir(data_root);
+        let layer2_builder = opendal::services::Rocksdb::default().datadir(data_root);
         let storager2 = if let Some(storager3) = storager3 {
             let storager2 = Storager::build_one(
                 layer2_builder,
@@ -188,10 +187,6 @@ impl Storager {
 }
 
 impl Storager {
-    async fn _is_exist(&self, key: &str) -> bool {
-        self.operator.is_exist(key).await.unwrap_or(true)
-    }
-
     // collect keys by height
     async fn collect_keys(
         &self,
@@ -411,9 +406,8 @@ impl Storager {
         for h in handles {
             h.await
                 .map_err(|_| StatusCodeEnum::StoreError)?
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     warn!("store block({}) failed: store tx failed: {}", height, e);
-                    e
                 })?;
         }
 
@@ -510,9 +504,8 @@ impl Storager {
             let raw_tx = h
                 .await
                 .map_err(|_| StatusCodeEnum::LoadError)?
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     warn!("load block({}) failed: load tx failed: {}", height, e);
-                    e
                 })?;
             body.push(raw_tx)
         }
@@ -590,9 +583,8 @@ impl Storager {
         for h in handles {
             h.await
                 .map_err(|_| StatusCodeEnum::StoreError)?
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     warn!("store transactions failed: {}", e);
-                    e
                 })?;
         }
         Ok(())
@@ -652,9 +644,8 @@ impl Storager {
             let raw_tx = h
                 .await
                 .map_err(|_| StatusCodeEnum::LoadError)?
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     warn!("reload transactions failed: {}", e);
-                    e
                 })?;
             txs.push(raw_tx)
         }
