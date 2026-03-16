@@ -33,7 +33,7 @@ use opendal::{
     Builder, EntryMode, ErrorKind, Operator,
 };
 use prost::Message;
-use rand::Rng;
+use rand::RngExt;
 use std::{collections::HashSet, time::Duration};
 
 #[derive(Clone)]
@@ -249,7 +249,7 @@ impl Storager {
     #[async_recursion]
     pub async fn store(&self, real_key: &str, value: &[u8]) -> Result<(), StatusCodeEnum> {
         match self.operator.write(real_key, value.to_owned()).await {
-            Ok(()) => match self.layer {
+            Ok(_) => match self.layer {
                 1 => {
                     // layer 1 will wait for layer 2 to store
                     if let Some(next) = self.next_storager.as_ref() {
@@ -674,8 +674,8 @@ async fn backup(local: Storager, backup_interval_secs: u64, retreat_interval_sec
     'backup_round: loop {
         // sleep
         let backup_interval = {
-            let mut rng = rand::thread_rng();
-            rng.gen_range(min_interval..=max_interval)
+            let mut rng = rand::rng();
+            rng.random_range(min_interval..=max_interval)
         };
         tokio::time::sleep(Duration::from_secs(backup_interval)).await;
 
@@ -939,8 +939,8 @@ async fn export(local: Storager, exporter_config: ExportConfig) {
     loop {
         // random backoff
         let export_interval = {
-            let mut rng = rand::thread_rng();
-            rng.gen_range(min_interval..=max_interval)
+            let mut rng = rand::rng();
+            rng.random_range(min_interval..=max_interval)
         };
         tokio::time::sleep(Duration::from_secs(export_interval)).await;
 
